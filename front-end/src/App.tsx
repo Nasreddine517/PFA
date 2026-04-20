@@ -14,6 +14,7 @@ import ResultsPage from "./pages/ResultsPage";
 import Auth from "./pages/Auth";
 import ProfileSettings from "./pages/ProfileSettings";
 import NotFound from "./pages/NotFound";
+import MedicalLibrary from "./pages/MedicalLibrary";
 
 const queryClient = new QueryClient();
 
@@ -39,6 +40,7 @@ const App = () => (
               <Route path="/results" element={<ProtectedWithSidebar><ResultsPage /></ProtectedWithSidebar>} />
               <Route path="/results/:id" element={<ProtectedWithSidebar><ResultsPage /></ProtectedWithSidebar>} />
               <Route path="/profile" element={<ProtectedWithSidebar><ProfileSettings /></ProtectedWithSidebar>} />
+              <Route path="/library" element={<ProtectedWithSidebar><MedicalLibrary /></ProtectedWithSidebar>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>

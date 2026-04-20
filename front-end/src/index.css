@@ -9,34 +9,24 @@
   :root, .dark {
     --background: 220 30% 6%;
     --foreground: 210 20% 92%;
-
     --card: 220 25% 10%;
     --card-foreground: 210 20% 92%;
-
     --popover: 220 25% 10%;
     --popover-foreground: 210 20% 92%;
-
     --primary: 217 91% 60%;
     --primary-foreground: 220 30% 6%;
-
     --secondary: 220 20% 16%;
     --secondary-foreground: 210 20% 85%;
-
     --muted: 220 20% 14%;
     --muted-foreground: 215 15% 55%;
-
     --accent: 47 100% 62%;
     --accent-foreground: 220 30% 6%;
-
     --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
-
     --border: 220 20% 18%;
     --input: 220 20% 18%;
     --ring: 217 91% 60%;
-
     --radius: 0.75rem;
-
     --sidebar-background: 220 25% 8%;
     --sidebar-foreground: 210 20% 85%;
     --sidebar-primary: 217 91% 60%;
@@ -45,8 +35,6 @@
     --sidebar-accent-foreground: 210 20% 85%;
     --sidebar-border: 220 20% 18%;
     --sidebar-ring: 217 91% 60%;
-
-    /* Custom tokens */
     --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(47 100% 62%));
     --gradient-dark: linear-gradient(180deg, hsl(220 30% 6%), hsl(220 25% 10%));
     --gradient-card: linear-gradient(135deg, hsl(220 25% 12%), hsl(220 25% 8%));
@@ -54,78 +42,59 @@
     --shadow-glow: 0 0 40px hsl(217 91% 60% / 0.15);
     --shadow-card: 0 4px 24px hsl(220 30% 4% / 0.4);
     --surface-glass: hsl(220 25% 12% / 0.6);
-
     --font-display: 'Space Grotesk', sans-serif;
     --font-body: 'Inter', sans-serif;
   }
 
   /* LIGHT MODE */
   .light {
-    --background: 220 30% 96%;
+    --background: 218 40% 94%;
     --foreground: 220 35% 12%;
-
     --card: 0 0% 100%;
     --card-foreground: 220 35% 12%;
-
     --popover: 0 0% 100%;
     --popover-foreground: 220 35% 12%;
-
     --primary: 217 85% 48%;
     --primary-foreground: 0 0% 100%;
-
-    --secondary: 217 40% 90%;
+    --secondary: 217 45% 88%;
     --secondary-foreground: 220 35% 18%;
-
-    --muted: 220 30% 92%;
+    --muted: 218 35% 90%;
     --muted-foreground: 220 20% 40%;
-
-    --accent: 43 95% 50%;
+    --accent: 43 95% 46%;
     --accent-foreground: 220 35% 8%;
-
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-
-    --border: 217 35% 82%;
-    --input: 217 35% 88%;
+    --border: 217 40% 78%;
+    --input: 217 40% 86%;
     --ring: 217 85% 48%;
-
     --radius: 0.75rem;
-
-    --sidebar-background: 220 40% 98%;
+    --sidebar-background: 220 55% 97%;
     --sidebar-foreground: 220 35% 15%;
     --sidebar-primary: 217 85% 48%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 217 40% 93%;
+    --sidebar-accent: 217 45% 91%;
     --sidebar-accent-foreground: 220 35% 15%;
-    --sidebar-border: 217 35% 85%;
+    --sidebar-border: 217 40% 82%;
     --sidebar-ring: 217 85% 48%;
-
-    --gradient-primary: linear-gradient(135deg, hsl(217 85% 48%), hsl(43 95% 50%));
-    --gradient-dark: linear-gradient(160deg, hsl(220 50% 94%), hsl(217 60% 88%));
-    --gradient-card: linear-gradient(135deg, hsl(0 0% 100%), hsl(217 40% 96%));
+    --gradient-primary: linear-gradient(135deg, hsl(217 85% 48%), hsl(43 95% 46%));
+    --gradient-dark: linear-gradient(160deg, hsl(218 40% 94%), hsl(217 60% 88%));
+    --gradient-card: linear-gradient(135deg, hsl(0 0% 100%), hsl(217 45% 96%));
     --gradient-glow: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), hsl(217 85% 48% / 0.1), transparent 40%);
     --shadow-glow: 0 0 40px hsl(217 85% 48% / 0.25);
     --shadow-card: 0 4px 24px hsl(217 50% 20% / 0.1);
-    --surface-glass: hsl(220 50% 98% / 0.85);
-
+    --surface-glass: hsl(0 0% 100% / 0.75);
     --font-display: 'Space Grotesk', sans-serif;
     --font-body: 'Inter', sans-serif;
   }
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
-
+  * { @apply border-border; }
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-body);
   }
-
-  h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-display);
-  }
+  h1, h2, h3, h4, h5, h6 { font-family: var(--font-display); }
 }
 
 @layer utilities {
@@ -133,137 +102,109 @@
     @apply bg-clip-text text-transparent;
     background-image: var(--gradient-primary);
   }
-
   .bg-glass {
     background: var(--surface-glass);
     backdrop-filter: blur(16px);
     border: 1px solid hsl(var(--border));
   }
-
-  .bg-gradient-card {
-    background: var(--gradient-card);
-  }
-
-  .shadow-glow {
-    box-shadow: var(--shadow-glow);
-  }
-
-  .shadow-card {
-    box-shadow: var(--shadow-card);
-  }
-
-  .animate-pulse-glow {
-    animation: pulseGlow 2s ease-in-out infinite;
-  }
-
-  .animate-scan-line {
-    animation: scanLine 3s ease-in-out infinite;
-  }
-
-  .animate-float {
-    animation: float 6s ease-in-out infinite;
-  }
+  .bg-gradient-card { background: var(--gradient-card); }
+  .shadow-glow      { box-shadow: var(--shadow-glow); }
+  .shadow-card      { box-shadow: var(--shadow-card); }
+  .animate-pulse-glow  { animation: pulseGlow 2s ease-in-out infinite; }
+  .animate-scan-line   { animation: scanLine 3s ease-in-out infinite; }
+  .animate-float       { animation: float 6s ease-in-out infinite; }
 }
 
 @keyframes pulseGlow {
   0%, 100% { opacity: 0.4; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.05); }
+  50%       { opacity: 1;   transform: scale(1.05); }
 }
-
 @keyframes scanLine {
-  0% { transform: translateY(-100%); }
-  50% { transform: translateY(100%); }
+  0%   { transform: translateY(-100%); }
+  50%  { transform: translateY(100%);  }
   100% { transform: translateY(-100%); }
 }
-
 @keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+  0%, 100% { transform: translateY(0);     }
+  50%       { transform: translateY(-10px); }
 }
 
-/* ===== LIGHT MODE ENHANCEMENTS ===== */
+/* ============================================
+   LIGHT MODE GLOBAL ENHANCEMENTS
+   ============================================ */
+
 .light body {
-  background: linear-gradient(160deg, hsl(220, 50%, 95%) 0%, hsl(217, 60%, 92%) 40%, hsl(43, 60%, 93%) 100%);
+  background: linear-gradient(160deg,
+    hsl(220, 55%, 92%) 0%,
+    hsl(217, 65%, 88%) 35%,
+    hsl(200, 55%, 90%) 65%,
+    hsl(43,  70%, 90%) 100%
+  );
   min-height: 100vh;
 }
 
 .light .bg-background {
-  background: linear-gradient(160deg, hsl(220, 50%, 95%) 0%, hsl(217, 60%, 92%) 40%, hsl(43, 60%, 93%) 100%) !important;
+  background: linear-gradient(160deg,
+    hsl(220, 55%, 92%) 0%,
+    hsl(217, 65%, 88%) 35%,
+    hsl(200, 55%, 90%) 65%,
+    hsl(43,  70%, 90%) 100%
+  ) !important;
 }
 
-/* Colored card borders in light mode */
-.light .border-border {
-  border-color: hsl(217, 35%, 82%);
-}
-
-/* Glass surface in light mode */
 .light .bg-glass {
-  background: hsl(0, 0%, 100%, 0.75);
+  background: hsl(0, 0%, 100%, 0.72);
   backdrop-filter: blur(16px);
-  border: 1px solid hsl(217, 40%, 80%);
-  box-shadow: 0 4px 20px hsl(217, 50%, 30%, 0.08);
+  border: 1px solid hsl(217, 45%, 78%);
+  box-shadow: 0 4px 20px hsl(217, 55%, 35%, 0.09);
 }
 
-/* Cards get a subtle blue-tinted shadow */
 .light .shadow-card {
-  box-shadow: 0 4px 24px hsl(217, 60%, 40%, 0.1), 0 1px 4px hsl(217, 60%, 40%, 0.06);
+  box-shadow:
+    0 2px 0 0 hsl(217, 70%, 68%),
+    0 6px 28px hsl(217, 60%, 40%, 0.12),
+    0 2px 6px  hsl(217, 60%, 40%, 0.07) !important;
 }
 
-/* Sidebar in light mode — blue tinted */
 .light [data-sidebar="sidebar"] {
-  background: linear-gradient(180deg, hsl(220, 55%, 97%) 0%, hsl(217, 50%, 94%) 100%) !important;
-  border-right: 1px solid hsl(217, 40%, 82%);
+  background: linear-gradient(180deg,
+    hsl(220, 60%, 97%) 0%,
+    hsl(217, 55%, 93%) 60%,
+    hsl(43,  50%, 95%) 100%
+  ) !important;
+  border-right: 1px solid hsl(217, 45%, 82%) !important;
 }
 
-/* Gold accent strip on top of cards in light mode */
-.light .rounded-xl,
-.light .rounded-2xl {
-  box-shadow: 0 2px 16px hsl(217, 50%, 40%, 0.08);
+.light header {
+  background: hsl(218, 55%, 96%, 0.9) !important;
+  border-bottom: 1px solid hsl(217, 40%, 82%) !important;
 }
 
-/* Input styling in light mode */
 .light input,
 .light textarea {
   background: hsl(0, 0%, 100%) !important;
-  border-color: hsl(217, 40%, 78%) !important;
+  border-color: hsl(217, 45%, 76%) !important;
 }
 .light input:focus,
 .light textarea:focus {
   border-color: hsl(217, 85%, 50%) !important;
-  box-shadow: 0 0 0 3px hsl(217, 85%, 50%, 0.12) !important;
+  box-shadow: 0 0 0 3px hsl(217, 85%, 50%, 0.14) !important;
 }
 
-/* Header in light mode */
-.light header {
-  background: hsl(220, 50%, 97%, 0.9) !important;
-  border-bottom-color: hsl(217, 40%, 82%) !important;
+.light .recharts-cartesian-grid line {
+  stroke: hsl(217, 50%, 82%) !important;
 }
 
-/* Decorative orb background for light mode pages */
-.light-orb-bg {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  overflow: hidden;
+.light footer {
+  background: linear-gradient(180deg, hsl(218, 45%, 92%), hsl(217, 55%, 90%)) !important;
+  border-top: 1px solid hsl(217, 40%, 82%) !important;
 }
-.light-orb-bg::before {
-  content: '';
-  position: absolute;
-  top: -10%;
-  right: -5%;
-  width: 500px;
-  height: 500px;
-  border-radius: 50%;
-  background: radial-gradient(circle, hsl(217, 85%, 65%, 0.15) 0%, transparent 70%);
+
+.light .bg-card.border-border {
+  background: hsl(0, 0%, 100%) !important;
+  border: 1px solid hsl(217, 40%, 80%) !important;
+  box-shadow: 0 2px 12px hsl(217, 50%, 40%, 0.07);
 }
-.light-orb-bg::after {
-  content: '';
-  position: absolute;
-  bottom: -10%;
-  left: -5%;
-  width: 600px;
-  height: 600px;
-  border-radius: 50%;
-  background: radial-gradient(circle, hsl(43, 95%, 60%, 0.12) 0%, transparent 70%);
-}
+
+.light .bg-primary\/10 { background: hsl(217, 85%, 95%) !important; }
+.light .bg-accent\/10  { background: hsl(43,  95%, 93%) !important; }
