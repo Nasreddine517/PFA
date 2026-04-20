@@ -1,6 +1,6 @@
-import { Brain, BarChart3, Home, User, LogOut, Scan } from "lucide-react";
+import { Brain, BarChart3, Home, LogOut, Scan, BookOpen } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -17,16 +17,19 @@ import {
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  const location = useLocation();
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
-  const { t, lang } = useTheme();
-  const [profile, setProfile] = useState<{ display_name: string | null; avatar_url: string | null }>({ display_name: null, avatar_url: null });
+  const { t, lang, theme } = useTheme();
+  const [profile, setProfile] = useState<{ display_name: string | null; avatar_url: string | null }>({
+    display_name: null,
+    avatar_url: null,
+  });
 
   const navItems = [
-    { title: t("sidebar.home"), url: "/", icon: Home },
-    { title: t("sidebar.analyze"), url: "/upload", icon: Scan },
+    { title: t("sidebar.home"),      url: "/",          icon: Home      },
+    { title: t("sidebar.analyze"),   url: "/upload",    icon: Scan      },
     { title: t("sidebar.dashboard"), url: "/dashboard", icon: BarChart3 },
+    { title: lang === "fr" ? "Bibliothèque" : "Medical Library", url: "/library", icon: BookOpen },
   ];
 
   useEffect(() => {
@@ -47,15 +50,49 @@ export function AppSidebar() {
     ? profile.display_name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
     : "DR";
 
+  const isLight = theme === "light";
+
   return (
-    <Sidebar collapsible="icon" className="border-r border-sidebar-border bg-sidebar-background">
+    <Sidebar
+      collapsible="icon"
+      className="border-r border-sidebar-border h-screen sticky top-0"
+      style={isLight ? {
+        background: "linear-gradient(180deg, hsl(220,60%,97%) 0%, hsl(217,55%,93%) 60%, hsl(43,50%,95%) 100%)",
+        borderRight: "1px solid hsl(217,40%,82%)",
+        position: "sticky",
+        top: 0,
+        height: "100vh",
+        overflow: "hidden",
+      } : {
+        position: "sticky",
+        top: 0,
+        height: "100vh",
+        overflow: "hidden",
+      }}
+    >
+      {isLight && (
+        <div style={{
+          position: "absolute",
+          top: 0, left: 0, right: 0,
+          height: "3px",
+          background: "linear-gradient(90deg, hsl(217,85%,52%), hsl(43,95%,55%), hsl(217,85%,52%))",
+          zIndex: 10,
+        }} />
+      )}
+
       <SidebarContent>
-        {/* Logo — link to home, preserves auth state */}
-        <Link to="/" className={`flex items-center gap-2 px-4 py-5 hover:opacity-80 transition-opacity ${collapsed ? "justify-center" : ""}`}>
+        <Link
+          to="/"
+          className={`flex items-center gap-2 px-4 py-5 hover:opacity-80 transition-opacity ${collapsed ? "justify-center" : ""}`}
+        >
           <motion.div
             whileHover={{ rotate: 360 }}
             transition={{ duration: 0.6 }}
-            className="w-9 h-9 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0"
+            className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+            style={isLight
+              ? { background: "linear-gradient(135deg, hsl(217,85%,88%), hsl(43,90%,88%))", border: "1px solid hsl(217,60%,78%)" }
+              : { background: "hsl(var(--primary) / 0.2)" }
+            }
           >
             <Brain className="w-5 h-5 text-primary" />
           </motion.div>
@@ -67,9 +104,13 @@ export function AppSidebar() {
         </Link>
 
         <SidebarGroup>
-          <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground">
+          <SidebarGroupLabel
+            className="text-xs uppercase tracking-wider font-bold"
+            style={{ color: isLight ? "hsl(43,75%,38%)" : undefined }}
+          >
             {!collapsed && (lang === "fr" ? "Navigation" : "Navigation")}
           </SidebarGroupLabel>
+
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.map((item) => (
@@ -96,19 +137,41 @@ export function AppSidebar() {
         <motion.div
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.98 }}
-          className={`flex items-center gap-3 p-2 rounded-2xl bg-background/80 border border-primary/20 shadow-[0_12px_35px_rgba(59,130,246,0.18)] hover:bg-background cursor-pointer transition-all duration-300 ${collapsed ? "justify-center" : ""}`}
+          className={`flex items-center gap-3 p-2 rounded-2xl cursor-pointer transition-all duration-300 ${collapsed ? "justify-center" : ""}`}
+          style={isLight ? {
+            background: "linear-gradient(135deg, hsl(217,85%,95%), hsl(43,90%,94%))",
+            border: "1px solid hsl(217,55%,80%)",
+            boxShadow: "0 4px 20px hsl(217,60%,50%,0.12)",
+          } : {
+            background: "hsl(var(--background) / 0.8)",
+            border: "1px solid hsl(var(--primary) / 0.2)",
+            boxShadow: "0 12px 35px rgba(59,130,246,0.18)",
+          }}
           onClick={() => navigate("/profile")}
         >
           <Avatar className="w-10 h-10 border border-primary/30">
             {profile.avatar_url ? (
               <AvatarImage src={profile.avatar_url} className="object-cover" />
             ) : (
-              <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">{initials}</AvatarFallback>
+              <AvatarFallback
+                className="text-sm font-semibold"
+                style={isLight ? {
+                  background: "linear-gradient(135deg, hsl(217,85%,85%), hsl(43,90%,85%))",
+                  color: "hsl(217,85%,35%)",
+                } : {
+                  background: "hsl(var(--primary)/0.1)",
+                  color: "hsl(var(--primary))",
+                }}
+              >
+                {initials}
+              </AvatarFallback>
             )}
           </Avatar>
           {!collapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-sidebar-foreground truncate">{profile.display_name || "Doctor"}</p>
+              <p className="text-sm font-medium text-sidebar-foreground truncate">
+                {profile.display_name || "Doctor"}
+              </p>
               <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
             </div>
           )}
