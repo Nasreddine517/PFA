@@ -5,12 +5,9 @@ import { useTheme } from "@/contexts/ThemeContext";
 
 const data = {
   types: [
-    { name: "Glioblastome (GBM)", grade: "Grade IV", description: "Tumeur cérébrale primaire la plus agressive. Croissance rapide, pronostic sévère.", color: "#ef4444" },
+    { name: "Gliome", grade: "Grade II-IV", description: "Tumeur des cellules gliales. Inclut le glioblastome (GBM), forme la plus agressive.", color: "#ef4444" },
     { name: "Méningiome", grade: "Grade I-II", description: "Tumeur des méninges, souvent bénigne, croissance lente.", color: "#3b82f6" },
-    { name: "Astrocytome", grade: "Grade II-III", description: "Tumeur des astrocytes, peut évoluer vers des formes malignes.", color: "#f59e0b" },
-    { name: "Médulloblastome", grade: "Grade IV", description: "Tumeur maligne du cervelet, plus fréquente chez l'enfant.", color: "#8b5cf6" },
-    { name: "Oligodendrogliome", grade: "Grade II-III", description: "Tumeur à croissance lente avec bon pronostic relatif.", color: "#10b981" },
-    { name: "Épendymome", grade: "Grade II-III", description: "Tumeur des cellules épendymaires tapissant les ventricules.", color: "#06b6d4" },
+    { name: "Tumeur pituitaire", grade: "Grade I-II", description: "Tumeur de l'hypophyse, souvent bénigne. Peut affecter les hormones et la vision.", color: "#f59e0b" },
   ],
   symptoms: [
     { icon: "🧠", title: "Céphalées persistantes", detail: "Maux de tête matinaux intenses, résistants aux antalgiques, souvent aggravés en position couchée." },
@@ -44,7 +41,7 @@ const data = {
   ],
 };
 
-const Section = ({ id, icon: Icon, title, children }: any) => {
+const Section = ({ icon: Icon, title, children }: any) => {
   const [open, setOpen] = useState(true);
   return (
     <motion.div
@@ -88,7 +85,6 @@ const MedicalLibrary = () => {
 
   return (
     <div className="min-h-screen bg-background p-6 max-w-5xl mx-auto">
-      {/* Header */}
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-10">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
@@ -113,14 +109,14 @@ const MedicalLibrary = () => {
         </div>
       </motion.div>
 
-      {/* 1. Types de cancers */}
-      <Section id="types" icon={Brain} title={lang === "fr" ? "Types de tumeurs cérébrales" : "Brain Tumor Types"}>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {/* 1. Types */}
+      <Section icon={Brain} title={lang === "fr" ? "Types de tumeurs cérébrales" : "Brain Tumor Types"}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {data.types.map((t) => (
             <div key={t.name} className="flex gap-3 p-4 rounded-xl bg-muted/30 border border-border hover:border-primary/30 transition-colors">
               <div className="w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0" style={{ backgroundColor: t.color }} />
               <div>
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
                   <span className="font-semibold text-foreground text-sm">{t.name}</span>
                   <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: t.color + "22", color: t.color }}>{t.grade}</span>
                 </div>
@@ -132,7 +128,7 @@ const MedicalLibrary = () => {
       </Section>
 
       {/* 2. Symptômes */}
-      <Section id="symptoms" icon={Activity} title={lang === "fr" ? "Symptômes expliqués" : "Symptoms Explained"}>
+      <Section icon={Activity} title={lang === "fr" ? "Symptômes expliqués" : "Symptoms Explained"}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {data.symptoms.map((s) => (
             <div key={s.title} className="p-4 rounded-xl bg-muted/30 border border-border hover:border-primary/30 transition-colors">
@@ -147,7 +143,7 @@ const MedicalLibrary = () => {
       </Section>
 
       {/* 3. Stades */}
-      <Section id="stages" icon={Layers} title={lang === "fr" ? "Stades de la maladie" : "Disease Stages"}>
+      <Section icon={Layers} title={lang === "fr" ? "Stades de la maladie" : "Disease Stages"}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {data.stages.map((s) => (
             <div key={s.stage} className="p-4 rounded-xl border transition-colors hover:border-primary/30" style={{ borderColor: s.color + "44", backgroundColor: s.color + "08" }}>
@@ -157,7 +153,7 @@ const MedicalLibrary = () => {
                 </div>
                 <div>
                   <div className="font-semibold text-foreground text-sm">{s.title}</div>
-                  <div className="text-xs font-medium" style={{ color: s.color }}>Survie médiane : {s.survival}</div>
+                  <div className="text-xs font-medium" style={{ color: s.color }}>{lang === "fr" ? "Survie médiane" : "Median survival"} : {s.survival}</div>
                 </div>
               </div>
               <p className="text-muted-foreground text-xs leading-relaxed">{s.description}</p>
@@ -167,7 +163,7 @@ const MedicalLibrary = () => {
       </Section>
 
       {/* 4. Traitements */}
-      <Section id="treatments" icon={Pill} title={lang === "fr" ? "Traitements possibles" : "Possible Treatments"}>
+      <Section icon={Pill} title={lang === "fr" ? "Traitements possibles" : "Possible Treatments"}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {data.treatments.map((t) => (
             <div key={t.name} className="p-4 rounded-xl bg-muted/30 border border-border hover:border-primary/30 transition-colors">
@@ -182,7 +178,7 @@ const MedicalLibrary = () => {
       </Section>
 
       {/* 5. IRM */}
-      <Section id="mri" icon={Image} title={lang === "fr" ? "Séquences IRM — Guide rapide" : "MRI Sequences — Quick Guide"}>
+      <Section icon={Image} title={lang === "fr" ? "Séquences IRM — Guide rapide" : "MRI Sequences — Quick Guide"}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {data.mri.map((m) => (
             <div key={m.label} className="flex gap-3 p-4 rounded-xl bg-muted/30 border border-border hover:border-primary/30 transition-colors">
