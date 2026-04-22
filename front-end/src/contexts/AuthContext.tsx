@@ -1,14 +1,26 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+
+import {
+  getCurrentUser,
+  loginDoctor,
+  registerDoctor,
+  updateCurrentUserProfile,
+  type ApiUser,
+  type UpdateCurrentUserPayload,
+} from "@/lib/authApi";
 
 interface User {
   id: string;
   email: string;
   fullName: string;
+  specialty?: string | null;
+  hospital?: string | null;
   profileImage?: string;
 }
 
 interface Session {
   user: User | null;
+  accessToken: string | null;
 }
 
 interface AuthContextType {
@@ -18,92 +30,159 @@ interface AuthContextType {
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
-  updateUserProfile: (profileData: Partial<User>) => void;
+  updateUserProfile: (profileData: Partial<User>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-const STORAGE_KEY = "neuroscan_user";
-const ACCOUNTS_KEY = "neuroscan_accounts";
+const USER_STORAGE_KEY = "neuroscan_user";
+const TOKEN_STORAGE_KEY = "neuroscan_access_token";
+
+const readStoredUser = (): User | null => {
+  const storedUser = localStorage.getItem(USER_STORAGE_KEY);
+  if (!storedUser) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(storedUser) as User;
+  } catch {
+    localStorage.removeItem(USER_STORAGE_KEY);
+    return null;
+  }
+};
+
+const mapApiUser = (apiUser: ApiUser, storedUser?: User | null): User => ({
+  id: apiUser.id,
+  email: apiUser.email,
+  fullName: apiUser.fullName,
+  specialty: apiUser.specialty ?? null,
+  hospital: apiUser.hospital ?? null,
+  profileImage: apiUser.avatarUrl ?? storedUser?.profileImage,
+});
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        const u = JSON.parse(stored) as User;
-        setUser(u);
-        setSession({ user: u });
-      } catch {
-        localStorage.removeItem(STORAGE_KEY);
-      }
-    }
-    setLoading(false);
-  }, []);
-
-  const getAccounts = (): Record<string, { password: string; user: User }> => {
-    try {
-      return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || "{}");
-    } catch {
-      return {};
-    }
+  const applySession = (nextUser: User, accessToken: string) => {
+    setUser(nextUser);
+    setSession({ user: nextUser, accessToken });
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(nextUser));
+    localStorage.setItem(TOKEN_STORAGE_KEY, accessToken);
   };
 
-  const signUp = async (email: string, password: string, fullName: string) => {
-    const accounts = getAccounts();
-    if (accounts[email]) {
-      throw new Error("Un compte avec cet email existe déjà.");
-    }
-    const newUser: User = {
-      id: crypto.randomUUID(),
-      email,
-      fullName,
-    };
-    accounts[email] = { password, user: newUser };
-    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
-    setUser(newUser);
-    setSession({ user: newUser });
-  };
-
-  const signIn = async (email: string, password: string) => {
-    const accounts = getAccounts();
-    const account = accounts[email];
-    if (!account || account.password !== password) {
-      throw new Error("Email ou mot de passe incorrect");
-    }
-    const u = account.user;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(u));
-    setUser(u);
-    setSession({ user: u });
-  };
-
-  const signOut = async () => {
-    localStorage.removeItem(STORAGE_KEY);
+  const clearSession = () => {
+    localStorage.removeItem(USER_STORAGE_KEY);
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
     setUser(null);
     setSession(null);
   };
 
-  const updateUserProfile = (profileData: Partial<User>) => {
-    if (user) {
-      const updatedUser = { ...user, ...profileData };
-      setUser(updatedUser);
-      setSession({ user: updatedUser });
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedUser));
-      // Update in accounts store too
-      const accounts = getAccounts();
-      if (accounts[updatedUser.email]) {
-        accounts[updatedUser.email].user = updatedUser;
-        localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+  useEffect(() => {
+    let isMounted = true;
+
+    const bootstrapSession = async () => {
+      const storedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+      const storedUser = readStoredUser();
+
+      if (!storedToken) {
+        if (storedUser) {
+          localStorage.removeItem(USER_STORAGE_KEY);
+        }
+        if (isMounted) {
+          setLoading(false);
+        }
+        return;
       }
+
+      try {
+        const currentUser = await getCurrentUser(storedToken);
+        if (!isMounted) {
+          return;
+        }
+        applySession(mapApiUser(currentUser, storedUser), storedToken);
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+        clearSession();
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void bootstrapSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const signUp = async (email: string, password: string, fullName: string) => {
+    const response = await registerDoctor(email, password, fullName);
+    applySession(mapApiUser(response.user, readStoredUser()), response.accessToken);
+  };
+
+  const signIn = async (email: string, password: string) => {
+    const response = await loginDoctor(email, password);
+    applySession(mapApiUser(response.user, readStoredUser()), response.accessToken);
+  };
+
+  const signOut = async () => {
+    clearSession();
+  };
+
+  const updateUserProfile = async (profileData: Partial<User>) => {
+    if (!user) {
+      return;
     }
+
+    const accessToken = session?.accessToken || localStorage.getItem(TOKEN_STORAGE_KEY);
+    let updatedUser: User = { ...user };
+    const payload: UpdateCurrentUserPayload = {};
+
+    if (profileData.fullName !== undefined) {
+      payload.fullName = profileData.fullName;
+    }
+    if (profileData.specialty !== undefined) {
+      payload.specialty = profileData.specialty ?? null;
+    }
+    if (profileData.hospital !== undefined) {
+      payload.hospital = profileData.hospital ?? null;
+    }
+
+    if (accessToken && Object.keys(payload).length > 0) {
+      const response = await updateCurrentUserProfile(accessToken, payload);
+      updatedUser = mapApiUser(response, updatedUser);
+    }
+
+    if (profileData.profileImage !== undefined) {
+      updatedUser.profileImage = profileData.profileImage;
+    }
+
+    setUser(updatedUser);
+    setSession((currentSession) => ({
+      user: updatedUser,
+      accessToken: currentSession?.accessToken || accessToken || null,
+    }));
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signOut, updateUserProfile }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        session,
+        loading,
+        signUp,
+        signIn,
+        signOut,
+        updateUserProfile,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

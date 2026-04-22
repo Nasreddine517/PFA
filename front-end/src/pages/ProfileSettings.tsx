@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { User, Building2, Stethoscope, Save, Camera, BookOpen } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -8,13 +8,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
-
-interface StoredProfile {
-  display_name?: string;
-  specialty?: string;
-  hospital?: string;
-  avatar_url?: string | null;
-}
 
 const ProfileSettings = () => {
   const { user, updateUserProfile } = useAuth();
@@ -32,26 +25,10 @@ const ProfileSettings = () => {
     if (!user) return;
     setAvatarUrl(user.profileImage || null);
     setDisplayName(user.fullName || "");
-    try {
-      const storedProfile = localStorage.getItem(`lovable_profile_${user.id}`);
-      if (storedProfile) {
-        const profile: StoredProfile = JSON.parse(storedProfile);
-        setDisplayName(profile.display_name || user.fullName || "");
-        setSpecialty(profile.specialty || "");
-        setHospital(profile.hospital || "");
-        setAvatarUrl(profile.avatar_url || user.profileImage || null);
-      }
-    } catch {
-      setSpecialty("");
-      setHospital("");
-    }
+    setSpecialty(user.specialty || "");
+    setHospital(user.hospital || "");
     setLoading(false);
   }, [user]);
-
-  const saveProfile = (profile: StoredProfile) => {
-    if (!user) return;
-    localStorage.setItem(`lovable_profile_${user.id}`, JSON.stringify(profile));
-  };
 
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -60,9 +37,14 @@ const ProfileSettings = () => {
     reader.onload = () => {
       const imageUrl = reader.result as string;
       setAvatarUrl(imageUrl);
-      updateUserProfile({ profileImage: imageUrl });
-      saveProfile({ display_name: displayName, specialty, hospital, avatar_url: imageUrl });
-      toast.success("Photo de profil mise à jour !");
+      void updateUserProfile({ profileImage: imageUrl })
+        .then(() => {
+          toast.success("Photo de profil mise à jour !");
+        })
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : "Erreur lors de la mise à jour de la photo.";
+          toast.error(message);
+        });
     };
     reader.readAsDataURL(file);
   };
@@ -70,10 +52,20 @@ const ProfileSettings = () => {
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
-    saveProfile({ display_name: displayName, specialty, hospital, avatar_url: avatarUrl });
-    updateUserProfile({ fullName: displayName, profileImage: avatarUrl || undefined });
-    toast.success("Profil mis à jour !");
-    setSaving(false);
+    try {
+      await updateUserProfile({
+        fullName: displayName,
+        specialty: specialty || null,
+        hospital: hospital || null,
+        profileImage: avatarUrl || undefined,
+      });
+      toast.success("Profil mis à jour !");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Erreur lors de la mise à jour du profil.";
+      toast.error(message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const initials = displayName
