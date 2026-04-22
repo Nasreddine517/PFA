@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Brain, Mail, Lock, User, ArrowRight, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,25 +15,10 @@ const Auth = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
-  const [isForgot, setIsForgot] = useState(false);
-  const [resetToken, setResetToken] = useState<string | null>(null);
-  const [resetStage, setResetStage] = useState<"request" | "token">("request");
-  const [resetPassword, setResetPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { signIn, signUp } = useAuth();
   const { lang } = useTheme();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-
-  useEffect(() => {
-    const token = searchParams.get("resetToken");
-    if (token) {
-      setResetToken(token);
-      setIsForgot(true);
-      setIsLogin(true);
-      setResetStage("token");
-    }
-  }, [searchParams]);
 
   const isValidEmail = (val: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
   const isValidDoctorName = (val: string) => /^Dr\.[A-Za-zÀ-ÖØ-öø-ÿ]+([ '-][A-Za-zÀ-ÖØ-öø-ÿ]+)*$/.test(val.trim());
@@ -44,17 +29,7 @@ const Auth = () => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      if (isForgot) {
-        if (resetStage === "request") {
-          if (!isValidEmail(email)) { err(lang === "fr" ? "Veuillez entrer un email valide." : "Please enter a valid email."); return; }
-          toast.success(lang === "fr" ? "Si ce compte existe, un lien a été envoyé." : "If this account exists, a reset link was sent.");
-          setIsForgot(false); setResetStage("request");
-        } else if (resetToken) {
-          if (resetPassword.length < 6) { err(lang === "fr" ? "Le mot de passe doit contenir au moins 6 caractères." : "Password must be at least 6 characters."); return; }
-          toast.success(lang === "fr" ? "Mot de passe réinitialisé !" : "Password reset successfully!");
-          setIsForgot(false); setResetToken(null); setResetStage("request"); setResetPassword(""); setPassword(""); navigate("/auth");
-        }
-      } else if (isLogin) {
+      if (isLogin) {
         if (!isValidEmail(email)) { err(lang === "fr" ? "Veuillez entrer un email valide." : "Please enter a valid email."); return; }
         if (password.length < 6) { err(lang === "fr" ? "Le mot de passe doit contenir au moins 6 caractères." : "Password must be at least 6 characters."); return; }
         try {
@@ -80,15 +55,9 @@ const Auth = () => {
     }
   };
 
-  const handleForgotPassword = () => { setIsForgot(true); setIsLogin(true); setResetStage(resetToken ? "token" : "request"); };
-  const handleCancelForgot = () => { setIsForgot(false); setResetToken(null); setResetStage("request"); setPassword(""); setResetPassword(""); };
-
   const tabLabels = lang === "fr" ? ["Connexion", "Créer un compte"] : ["Sign In", "Sign Up"];
 
   const submitLabel = () => {
-    if (isForgot) return resetStage === "request"
-      ? (lang === "fr" ? "Envoyer le lien" : "Send reset link")
-      : (lang === "fr" ? "Réinitialiser le mot de passe" : "Reset password");
     return isLogin
       ? (lang === "fr" ? "Se connecter" : "Sign In")
       : (lang === "fr" ? "Créer le compte" : "Create Account");
@@ -136,39 +105,29 @@ const Auth = () => {
           </motion.div>
 
           {/* Tab toggle */}
-          {!isForgot && (
-            <div className="flex rounded-lg bg-secondary/50 p-1 mb-8">
-              {tabLabels.map((tab, i) => (
-                <motion.button
-                  key={tab}
-                  onClick={() => setIsLogin(i === 0)}
-                  className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${
-                    (i === 0 ? isLogin : !isLogin) ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                  }`}
-                  whileTap={{ scale: 0.97 }}
-                >
-                  {tab}
-                </motion.button>
-              ))}
-            </div>
-          )}
+          <div className="flex rounded-lg bg-secondary/50 p-1 mb-8">
+            {tabLabels.map((tab, i) => (
+              <motion.button
+                key={tab}
+                onClick={() => setIsLogin(i === 0)}
+                className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${
+                  (i === 0 ? isLogin : !isLogin) ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                }`}
+                whileTap={{ scale: 0.97 }}
+              >
+                {tab}
+              </motion.button>
+            ))}
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <AnimatePresence mode="wait">
-              {!isLogin && !isForgot && (
+              {!isLogin && (
                 <motion.div key="name" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-2">
                   <Label className="flex items-center gap-2 text-muted-foreground">
                     <User className="w-3.5 h-3.5" /> {lang === "fr" ? "Nom complet" : "Full Name"}
                   </Label>
                   <Input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Dr.JeanDupont" required={!isLogin} />
-                </motion.div>
-              )}
-              {isForgot && resetStage === "token" && (
-                <motion.div key="new-password" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-2">
-                  <Label className="flex items-center gap-2 text-muted-foreground">
-                    <Lock className="w-3.5 h-3.5" /> {lang === "fr" ? "Nouveau mot de passe" : "New Password"}
-                  </Label>
-                  <Input type="password" autoComplete="new-password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} placeholder="••••••••" required minLength={6} />
                 </motion.div>
               )}
             </AnimatePresence>
@@ -177,40 +136,21 @@ const Auth = () => {
               <Label className="flex items-center gap-2 text-muted-foreground">
                 <Mail className="w-3.5 h-3.5" /> Email
               </Label>
-              <Input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="docteur@hopital.com" required disabled={isForgot && resetStage === "token"} />
+              <Input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="docteur@hopital.com" required />
             </div>
 
-            {!isForgot && (
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2 text-muted-foreground">
-                  <Lock className="w-3.5 h-3.5" /> {lang === "fr" ? "Mot de passe" : "Password"}
-                </Label>
-                <Input type="password" autoComplete={isLogin ? "current-password" : "new-password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} />
-              </div>
-            )}
-
-            <div className="flex items-center justify-between">
-              {isForgot ? (
-                <button type="button" onClick={handleCancelForgot} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  {lang === "fr" ? "← Retour à la connexion" : "← Back to sign in"}
-                </button>
-              ) : isLogin ? (
-                <button type="button" onClick={handleForgotPassword} className="text-sm text-primary hover:text-primary/80 transition-colors">
-                  {lang === "fr" ? "Mot de passe oublié ?" : "Forgot password?"}
-                </button>
-              ) : (<span />)}
-              {isForgot && resetStage === "request" && (
-                <p className="text-sm text-muted-foreground">
-                  {lang === "fr" ? "Entrez votre email pour recevoir un lien." : "Enter your email to receive a reset link."}
-                </p>
-              )}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2 text-muted-foreground">
+                <Lock className="w-3.5 h-3.5" /> {lang === "fr" ? "Mot de passe" : "Password"}
+              </Label>
+              <Input type="password" autoComplete={isLogin ? "current-password" : "new-password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} />
             </div>
 
             <div className="flex justify-center mt-6">
               <AnimatedButton
                 type="submit"
                 className="w-full h-12 gap-2 text-base"
-                disabled={isLoading || (isForgot && resetStage === "token" && resetPassword.length < 6)}
+                disabled={isLoading}
               >
                 {isLoading ? (
                   <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
