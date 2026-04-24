@@ -27,6 +27,9 @@ async def connect_to_mongo() -> None:
         database = client[settings.mongo_db_name]
         await client.admin.command("ping")
         await database["users"].create_index([("email", ASCENDING)], unique=True)
+        await database[get_scan_collection_name()].create_index([("doctor_id", ASCENDING)])
+        await database[get_analysis_collection_name()].create_index([("doctor_id", ASCENDING)])
+        await database[get_analysis_collection_name()].create_index([("scan_id", ASCENDING)])
         connection_error = None
     except PyMongoError as exc:
         if client is not None:
@@ -61,3 +64,11 @@ def get_database() -> AsyncIOMotorDatabase:
 
 def get_user_collection_name() -> str:
     return "users"
+
+
+def get_scan_collection_name() -> str:
+    return "scans"
+
+
+def get_analysis_collection_name() -> str:
+    return "analyses"
