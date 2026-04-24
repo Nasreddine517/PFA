@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import {
   AlertTriangle, CheckCircle, Download, Printer, ArrowLeft, Brain,
   Target, Activity, FileText, TrendingUp, Shield, Sparkles, Star,
@@ -10,9 +10,16 @@ import AnimatedButton from "@/components/AnimatedButton";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import { getAnalysisById } from "@/lib/analysisApi";
 import { generateMedicalReport } from "@/lib/generatePDF";
 
-const SCANS_STORAGE_KEY = "neuroscan_scans";
+const LATEST_ANALYSIS_STORAGE_KEY = "neuroscan_latest_analysis_id";
+
+interface ResultLocationState {
+  patientName?: string;
+  patientId?: string;
+  scanDate?: string;
+}
 
 interface ScanResult {
   id: string;
@@ -27,56 +34,70 @@ interface ScanResult {
   tumor_location: string | null;
   tumor_size: string | null;
   tumor_volume: string | null;
+  bounding_box: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null;
   report_text: string | null;
   image_url: string | null;
 }
 
 const ResultsPage = () => {
   const { id } = useParams();
-  const { user } = useAuth();
+  const location = useLocation();
+  const routeState = (location.state || {}) as ResultLocationState;
+  const { user, session } = useAuth();
   const { t, lang } = useTheme();
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [imageLoaded, setImageLoaded] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
-    try {
-      const stored = localStorage.getItem(SCANS_STORAGE_KEY);
-      const allScans: any[] = stored ? JSON.parse(stored) : [];
-      let apiScan: any = null;
-      if (id) {
-        apiScan = allScans.find((s) => s.id === id && s.userId === user.id);
-      } else {
-        const userScans = allScans.filter((s) => s.userId === user.id);
-        apiScan = userScans.length > 0 ? userScans[userScans.length - 1] : null;
-      }
-      if (apiScan) {
-        setScan({
-          id: apiScan.id,
-          patient_name: apiScan.patientName || "Patient",
-          patient_id_number: apiScan.patientId || null,
-          scan_date: apiScan.scanDate || new Date(apiScan.createdAt).toISOString().split("T")[0],
-          scan_type: "T1-weighted MRI",
-          result: apiScan.detected ? "positive" : "negative",
-          confidence: apiScan.confidence,
-          tumor_type: apiScan.detected ? (lang === "fr" ? "Tumeur détectée" : "Tumor detected") : null,
-          tumor_grade: apiScan.detected ? (lang === "fr" ? "À déterminer" : "To determine") : null,
-          tumor_location: apiScan.detected ? (lang === "fr" ? "À déterminer" : "To determine") : null,
-          tumor_size: null,
-          tumor_volume: null,
-          report_text: apiScan.detected
-            ? (lang === "fr" ? "Anomalie détectée nécessitant une attention médicale urgente. Veuillez consulter un spécialiste dans les plus brefs délais." : "Anomaly detected requiring urgent medical attention. Please consult a specialist as soon as possible.")
-            : (lang === "fr" ? "Aucune anomalie significative détectée. Continuez la surveillance régulière selon les recommandations médicales." : "No significant anomaly detected. Continue regular monitoring as per medical recommendations."),
-          image_url: apiScan.scanData,
-        });
-      }
-    } catch (error) {
-      console.error("Failed to load scan:", error);
-      setScan(null);
+    if (!user || !session?.accessToken) {
+      setLoading(false);
+      return;
     }
-    setLoading(false);
-  }, [id, user, lang]);
+
+    const analysisId = id || sessionStorage.getItem(LATEST_ANALYSIS_STORAGE_KEY);
+    if (!analysisId) {
+      setScan(null);
+      setLoading(false);
+      return;
+    }
+
+    const loadAnalysis = async () => {
+      try {
+        const analysis = await getAnalysisById(session.accessToken, analysisId);
+        sessionStorage.setItem(LATEST_ANALYSIS_STORAGE_KEY, analysis.id);
+        setScan({
+          id: analysis.id,
+          patient_name: routeState.patientName || "Patient",
+          patient_id_number: routeState.patientId || null,
+          scan_date: routeState.scanDate || analysis.createdAt.split("T")[0],
+          scan_type: analysis.fileType || "MRI",
+          result: analysis.result,
+          confidence: analysis.confidence,
+          tumor_type: analysis.tumorType || null,
+          tumor_grade: analysis.tumorGrade || null,
+          tumor_location: analysis.tumorLocation || null,
+          tumor_size: analysis.tumorSize || null,
+          tumor_volume: analysis.tumorVolume || null,
+          bounding_box: analysis.boundingBox || null,
+          report_text: analysis.reportText,
+          image_url: analysis.imageUrl || null,
+        });
+      } catch (error) {
+        console.error("Failed to load scan:", error);
+        setScan(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void loadAnalysis();
+  }, [id, routeState.patientId, routeState.patientName, routeState.scanDate, session?.accessToken, user]);
 
   const handleDownloadPDF = () => {
     if (!scan) return;
@@ -118,6 +139,14 @@ const ResultsPage = () => {
 
   const isPositive = scan.result === "positive";
   const confidence = scan.confidence?.toFixed(1) || "N/A";
+  const overlayBox = scan.bounding_box
+    ? {
+        left: `${scan.bounding_box.x * 100}%`,
+        top: `${scan.bounding_box.y * 100}%`,
+        width: `${scan.bounding_box.width * 100}%`,
+        height: `${scan.bounding_box.height * 100}%`,
+      }
+    : null;
 
   const metrics = [
     { label: t("res.confidence"), value: `${confidence}%`, icon: TrendingUp, color: "text-blue-400", bg: "rgba(59,130,246,0.1)", border: "rgba(59,130,246,0.25)" },
@@ -322,24 +351,24 @@ const ResultsPage = () => {
                     />
                   )}
                   {/* Tumor annotation */}
-                  {isPositive && imageLoaded && (
+                  {isPositive && imageLoaded && overlayBox && (
                     <motion.div
                       initial={{ opacity: 0, scale: 0.5 }}
                       animate={{ opacity: 1, scale: 1 }}
                       transition={{ delay: 0.8, type: "spring" }}
                       className="absolute"
-                      style={{ top: "30%", right: "25%", width: "90px", height: "90px" }}
+                      style={overlayBox}
                     >
                       <motion.div
                         animate={{ scale: [1, 1.25, 1], opacity: [0.7, 1, 0.7] }}
                         transition={{ duration: 2.5, repeat: Infinity }}
-                        className="absolute inset-0 rounded-full border-2 border-red-400"
+                        className="absolute inset-0 rounded-xl border-2 border-red-400"
                         style={{ boxShadow: "0 0 20px rgba(239,68,68,0.4)" }}
                       />
                       <motion.div
                         animate={{ rotate: 360 }}
                         transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
-                        className="absolute inset-3 rounded-full border border-red-400/50 border-dashed"
+                        className="absolute inset-2 rounded-lg border border-red-400/50 border-dashed"
                       />
                       <motion.div
                         initial={{ opacity: 0, y: -4 }}

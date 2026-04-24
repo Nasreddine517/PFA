@@ -11,9 +11,10 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
+import { uploadAndAnalyzeScan } from "@/lib/analysisApi";
 import { toast } from "sonner";
 
-const SCANS_STORAGE_KEY = "neuroscan_scans";
+const LATEST_ANALYSIS_STORAGE_KEY = "neuroscan_latest_analysis_id";
 
 const SYMPTOMS_FR = [
   { label: "Maux de tête persistants ou inhabituels", icon: "🧠", severity: "high" },
@@ -51,7 +52,7 @@ const severityConfig = {
 
 const UploadPage = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { t, lang } = useTheme();
 
   const SYMPTOMS = lang === "fr" ? SYMPTOMS_FR : SYMPTOMS_EN;
@@ -101,7 +102,7 @@ const UploadPage = () => {
   };
 
   const handleAnalyze = async () => {
-    if (!file || !user || !patientName) {
+    if (!file || !user || !patientName || !session?.accessToken) {
       toast.error(lang === "fr" ? "Veuillez renseigner le nom du patient et téléverser un scan." : "Please fill in patient name and upload a scan.");
       return;
     }
@@ -118,36 +119,22 @@ const UploadPage = () => {
     }, 400);
 
     try {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const base64String = e.target?.result as string;
-        const isPositive = Math.random() < 0.28;
-        const confidence = parseFloat((80 + Math.random() * 18).toFixed(1));
-        const scanId = crypto.randomUUID();
+      const analysis = await uploadAndAnalyzeScan(session.accessToken, file);
+      sessionStorage.setItem(LATEST_ANALYSIS_STORAGE_KEY, analysis.id);
 
-        const stored = localStorage.getItem(SCANS_STORAGE_KEY);
-        const allScans: any[] = stored ? JSON.parse(stored) : [];
-        allScans.push({
-          id: scanId,
-          userId: user?.id,
-          createdAt: new Date().toISOString(),
-          detected: isPositive,
-          confidence,
-          cleared: !isPositive,
-          scanData: base64String,
-          patientName,
-          patientId,
-          scanDate,
-          symptoms: selectedSymptoms,
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      clearInterval(interval);
+      setProgress(100);
+      setTimeout(() => {
+        navigate(`/results/${analysis.id}`, {
+          state: {
+            patientName,
+            patientId,
+            scanDate,
+            symptoms: selectedSymptoms,
+          },
         });
-        localStorage.setItem(SCANS_STORAGE_KEY, JSON.stringify(allScans));
-
-        await new Promise((resolve) => setTimeout(resolve, 1200));
-        clearInterval(interval);
-        setProgress(100);
-        setTimeout(() => navigate(`/results/${scanId}`), 500);
-      };
-      reader.readAsDataURL(file);
+      }, 500);
     } catch (error: any) {
       clearInterval(interval);
       setIsAnalyzing(false);
