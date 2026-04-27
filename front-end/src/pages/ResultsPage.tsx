@@ -115,6 +115,7 @@ const ResultsPage = () => {
       tumorVolume: scan.tumor_volume || undefined,
       reportText: scan.report_text || undefined,
       imageUrl: scan.image_url || undefined,
+      boundingBox: scan.bounding_box || undefined,
     });
   };
 
@@ -220,7 +221,7 @@ const ResultsPage = () => {
           </div>
         </motion.div>
 
-        {/* Status Banner — redesigned */}
+        {/* Status Banner */}
         <motion.div
           initial={{ opacity: 0, scale: 0.96, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -236,7 +237,6 @@ const ResultsPage = () => {
               : "0 0 40px rgba(59,130,246,0.1), inset 0 1px 0 rgba(59,130,246,0.15)",
           }}
         >
-          {/* Shimmer */}
           <motion.div
             className="absolute inset-0 pointer-events-none"
             style={{ background: `linear-gradient(105deg, transparent 40%, ${isPositive ? "rgba(239,68,68,0.06)" : "rgba(59,130,246,0.06)"} 50%, transparent 60%)` }}
@@ -307,7 +307,6 @@ const ResultsPage = () => {
               boxShadow: "0 8px 40px rgba(59,130,246,0.12), 0 2px 12px rgba(0,0,0,0.2)",
             }}
           >
-            {/* Card header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
               <h3 className="font-display font-semibold flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-blue-500/20 flex items-center justify-center">
@@ -321,7 +320,6 @@ const ResultsPage = () => {
               </div>
             </div>
 
-            {/* Image */}
             <div className="relative">
               {scan.image_url ? (
                 <div className="relative">
@@ -341,7 +339,6 @@ const ResultsPage = () => {
                       </motion.div>
                     </div>
                   )}
-                  {/* Scan line animation */}
                   {imageLoaded && (
                     <motion.div
                       className="absolute left-0 right-0 h-0.5 pointer-events-none"
@@ -350,7 +347,6 @@ const ResultsPage = () => {
                       transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
                     />
                   )}
-                  {/* Tumor annotation */}
                   {isPositive && imageLoaded && overlayBox && (
                     <motion.div
                       initial={{ opacity: 0, scale: 0.5 }}
@@ -389,7 +385,6 @@ const ResultsPage = () => {
               )}
             </div>
 
-            {/* Scan footer */}
             <div className="flex items-center justify-between px-5 py-3 border-t border-white/10">
               <span className="text-xs text-muted-foreground font-mono">{scan.scan_type}</span>
               <div className="flex items-center gap-2">
@@ -404,7 +399,6 @@ const ResultsPage = () => {
 
           {/* Right — Metrics + Info */}
           <div className="lg:col-span-2 space-y-4">
-            {/* Metrics grid */}
             <motion.div
               initial={{ opacity: 0, x: 30 }}
               animate={{ opacity: 1, x: 0 }}
@@ -438,7 +432,6 @@ const ResultsPage = () => {
               ))}
             </motion.div>
 
-            {/* Patient Info */}
             <motion.div
               initial={{ opacity: 0, x: 30 }}
               animate={{ opacity: 1, x: 0 }}
@@ -475,7 +468,6 @@ const ResultsPage = () => {
               </div>
             </motion.div>
 
-            {/* AI Report */}
             {scan.report_text && (
               <motion.div
                 initial={{ opacity: 0, x: 30 }}
