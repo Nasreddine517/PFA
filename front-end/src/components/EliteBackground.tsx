@@ -26,7 +26,8 @@ const EliteBackground = () => {
     };
     window.addEventListener("mousemove", handleMouse);
 
-    // Subtle floating particles
+    const isLight = document.documentElement.classList.contains("light");
+
     const particles: Array<{
       x: number; y: number; vx: number; vy: number;
       size: number; opacity: number; isGold: boolean; pulse: number;
@@ -50,12 +51,18 @@ const EliteBackground = () => {
       t++;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Subtle ambient orbs
-      const orbs = [
-        { x: 0.15, y: 0.25, radius: 300, hue: 217, sat: 91, light: 60 },
-        { x: 0.85, y: 0.75, radius: 250, hue: 47, sat: 100, light: 62 },
-        { x: 0.5, y: 0.5, radius: 350, hue: 217, sat: 70, light: 40 },
-      ];
+      // Orbs — vert sauge en light, bleu/gold en dark
+      const orbs = isLight
+        ? [
+            { x: 0.15, y: 0.25, radius: 300, hue: 152, sat: 35, light: 60 },
+            { x: 0.85, y: 0.75, radius: 250, hue: 82,  sat: 30, light: 55 },
+            { x: 0.5,  y: 0.5,  radius: 350, hue: 40,  sat: 40, light: 70 },
+          ]
+        : [
+            { x: 0.15, y: 0.25, radius: 300, hue: 217, sat: 91, light: 60 },
+            { x: 0.85, y: 0.75, radius: 250, hue: 47,  sat: 100, light: 62 },
+            { x: 0.5,  y: 0.5,  radius: 350, hue: 217, sat: 70, light: 40 },
+          ];
 
       orbs.forEach((orb) => {
         const ox = (orb.x + Math.sin(t * 0.0003) * 0.05) * canvas.width;
@@ -70,7 +77,9 @@ const EliteBackground = () => {
       // Mouse glow
       if (mouseX > 0) {
         const mg = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 180);
-        mg.addColorStop(0, "hsla(217, 91%, 60%, 0.04)");
+        mg.addColorStop(0, isLight
+          ? "hsla(152, 35%, 45%, 0.05)"
+          : "hsla(217, 91%, 60%, 0.04)");
         mg.addColorStop(1, "transparent");
         ctx.fillStyle = mg;
         ctx.fillRect(mouseX - 180, mouseY - 180, 360, 360);
@@ -100,16 +109,17 @@ const EliteBackground = () => {
         if (p.y < 0) p.y = canvas.height;
         if (p.y > canvas.height) p.y = 0;
 
-        const hue = p.isGold ? 47 : 217;
-        const sat = p.isGold ? 100 : 91;
-        const light = p.isGold ? 62 : 60;
+        // Couleurs particules : vert sauge / beige en light, bleu/gold en dark
+        const hue   = isLight ? (p.isGold ? 82  : 152) : (p.isGold ? 47  : 217);
+        const sat   = isLight ? (p.isGold ? 30  : 35)  : (p.isGold ? 100 : 91);
+        const light = isLight ? (p.isGold ? 55  : 50)  : (p.isGold ? 62  : 60);
 
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size * pulseFactor, 0, Math.PI * 2);
         ctx.fillStyle = `hsla(${hue}, ${sat}%, ${light}%, ${p.opacity * pulseFactor * 0.8})`;
         ctx.fill();
 
-        // Connections (subtle)
+        // Connexions
         for (let j = i + 1; j < particles.length; j++) {
           const dx2 = p.x - particles[j].x;
           const dy2 = p.y - particles[j].y;
@@ -119,7 +129,9 @@ const EliteBackground = () => {
             ctx.beginPath();
             ctx.moveTo(p.x, p.y);
             ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.strokeStyle = `hsla(217, 60%, 50%, ${alpha})`;
+            ctx.strokeStyle = isLight
+              ? `hsla(152, 35%, 45%, ${alpha})`
+              : `hsla(217, 60%, 50%, ${alpha})`;
             ctx.lineWidth = 0.4;
             ctx.stroke();
           }
