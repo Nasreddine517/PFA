@@ -6,6 +6,156 @@ import { AnimatedParagraph } from "@/components/AnimatedText";
 import { useTheme } from "@/contexts/ThemeContext";
 import brainBg from "@/assets/brain-hero-bg.png";
 
+const MedicalDecorations = () => (
+  <svg
+    className="absolute inset-0 w-full h-full pointer-events-none"
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 1440 900"
+    preserveAspectRatio="xMidYMid slice"
+  >
+    <defs>
+      <pattern id="medGrid" width="55" height="55" patternUnits="userSpaceOnUse">
+        <path d="M 55 0 L 0 0 0 55" fill="none" stroke="hsl(152,25%,55%)" strokeWidth="0.35" opacity="0.25"/>
+      </pattern>
+    </defs>
+
+    {/* Grille */}
+    <rect width="1440" height="900" fill="url(#medGrid)" />
+
+    {/* ECG segment 1 — gauche vers ~480 */}
+    <motion.path
+      d="M 0 175
+         L 55 175 L 80 175
+         L 98 137 L 113 220 L 126 103 L 139 213 L 152 175
+         L 200 175 L 235 175
+         L 250 160 L 260 193 L 270 175
+         L 380 175 L 440 175
+         L 458 153 L 470 201 L 482 127 L 494 195 L 506 175
+         L 560 175"
+      fill="none"
+      stroke="hsl(40,58%,50%)"
+      strokeWidth="1.6"
+      opacity="0.6"
+      initial={{ pathLength: 0, opacity: 0 }}
+      animate={{ pathLength: 1, opacity: 0.6 }}
+      transition={{ duration: 2, ease: "easeInOut", delay: 0.3 }}
+    />
+
+    {/* ECG segment 2 — milieu, repart de ~480 vers ~960 */}
+    <motion.path
+      d="M 560 175
+         L 620 175 L 680 175 L 720 175
+         L 738 153 L 750 205 L 762 122 L 774 200 L 786 175
+         L 840 175 L 900 175
+         L 916 158 L 926 195 L 936 175
+         L 960 175"
+      fill="none"
+      stroke="hsl(40,58%,50%)"
+      strokeWidth="1.6"
+      opacity="0.6"
+      initial={{ pathLength: 0, opacity: 0 }}
+      animate={{ pathLength: 1, opacity: 0.6 }}
+      transition={{ duration: 2, ease: "easeInOut", delay: 1.2 }}
+    />
+
+    {/* ECG segment 3 — repart de ~960 vers droite */}
+    <motion.path
+      d="M 960 175
+         L 1020 175 L 1060 175
+         L 1078 150 L 1090 206 L 1102 118 L 1114 202 L 1126 175
+         L 1180 175 L 1240 175
+         L 1256 161 L 1266 193 L 1276 175
+         L 1440 175"
+      fill="none"
+      stroke="hsl(40,58%,50%)"
+      strokeWidth="1.6"
+      opacity="0.6"
+      initial={{ pathLength: 0, opacity: 0 }}
+      animate={{ pathLength: 1, opacity: 0.6 }}
+      transition={{ duration: 2, ease: "easeInOut", delay: 2.1 }}
+    />
+
+    {/* Cercle cible grand haut gauche */}
+    <motion.g
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 1, delay: 0.8 }}
+    >
+      <circle cx="90" cy="310" r="110" fill="none" stroke="hsl(40,42%,55%)" strokeWidth="0.8" opacity="0.3" />
+      <circle cx="90" cy="310" r="78"  fill="none" stroke="hsl(40,42%,55%)" strokeWidth="0.8" opacity="0.3" />
+      <circle cx="90" cy="310" r="46"  fill="none" stroke="hsl(40,42%,55%)" strokeWidth="0.8" opacity="0.3" />
+      <circle cx="90" cy="310" r="14"  fill="none" stroke="hsl(40,42%,55%)" strokeWidth="1"   opacity="0.4" />
+      <line x1="90"  y1="188" x2="90"  y2="252" stroke="hsl(40,42%,55%)" strokeWidth="0.8" opacity="0.38" />
+      <line x1="90"  y1="368" x2="90"  y2="432" stroke="hsl(40,42%,55%)" strokeWidth="0.8" opacity="0.38" />
+      <line x1="-32" y1="310" x2="32"  y2="310" stroke="hsl(40,42%,55%)" strokeWidth="0.8" opacity="0.38" />
+      <line x1="148" y1="310" x2="212" y2="310" stroke="hsl(40,42%,55%)" strokeWidth="0.8" opacity="0.38" />
+    </motion.g>
+
+    {/* Grand cercle halo gauche */}
+    <motion.circle
+      cx="80" cy="560" r="170"
+      fill="none" stroke="hsl(40,32%,60%)" strokeWidth="0.6" opacity="0.15"
+      initial={{ opacity: 0 }} animate={{ opacity: 0.15 }}
+      transition={{ duration: 1.5, delay: 0.5 }}
+    />
+
+    {/* Grand cercle halo droite */}
+    <motion.circle
+      cx="1380" cy="400" r="185"
+      fill="none" stroke="hsl(152,22%,62%)" strokeWidth="0.6" opacity="0.15"
+      initial={{ opacity: 0 }} animate={{ opacity: 0.15 }}
+      transition={{ duration: 1.5, delay: 0.7 }}
+    />
+
+    {/* Cercle cible petit bas droite */}
+    <motion.g
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 1, delay: 1.2 }}
+    >
+      <circle cx="1360" cy="680" r="60" fill="none" stroke="hsl(152,26%,58%)" strokeWidth="0.8" opacity="0.28" />
+      <circle cx="1360" cy="680" r="38" fill="none" stroke="hsl(152,26%,58%)" strokeWidth="0.8" opacity="0.28" />
+      <circle cx="1360" cy="680" r="18" fill="none" stroke="hsl(152,26%,58%)" strokeWidth="0.8" opacity="0.28" />
+      <circle cx="1360" cy="680" r="5"  fill="hsl(152,26%,58%)"               opacity="0.22" />
+      <line x1="1360" y1="612" x2="1360" y2="634" stroke="hsl(152,26%,58%)" strokeWidth="0.8" opacity="0.32" />
+      <line x1="1360" y1="726" x2="1360" y2="748" stroke="hsl(152,26%,58%)" strokeWidth="0.8" opacity="0.32" />
+      <line x1="1292" y1="680" x2="1314" y2="680" stroke="hsl(152,26%,58%)" strokeWidth="0.8" opacity="0.32" />
+      <line x1="1406" y1="680" x2="1428" y2="680" stroke="hsl(152,26%,58%)" strokeWidth="0.8" opacity="0.32" />
+    </motion.g>
+  </svg>
+);
+
+// Croix médicale flottante — composant séparé avec animation float
+const FloatingCross = () => (
+  <motion.div
+    className="absolute pointer-events-none z-10"
+    style={{ top: "80px", right: "48px" }}
+    initial={{ opacity: 0, scale: 0.5 }}
+    animate={{
+      opacity: 0.55,
+      scale: 1,
+      y: [0, -14, 0],
+    }}
+    transition={{
+      opacity: { duration: 0.8, delay: 1 },
+      scale:   { duration: 0.8, delay: 1 },
+      y: {
+        duration: 3.5,
+        repeat: Infinity,
+        ease: "easeInOut",
+        delay: 1.2,
+      },
+    }}
+  >
+    <svg width="88" height="88" viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg">
+      {/* barre verticale */}
+      <rect x="33" y="0"  width="22" height="88" rx="6" fill="hsl(152,32%,56%)" />
+      {/* barre horizontale */}
+      <rect x="0"  y="33" width="88" height="22" rx="6" fill="hsl(152,32%,56%)" />
+    </svg>
+  </motion.div>
+);
+
 const HeroSection = () => {
   const { lang, theme } = useTheme();
 
@@ -16,14 +166,23 @@ const HeroSection = () => {
   ];
 
   const pills = [
-    { icon: Zap,    text: lang === "fr" ? "Analyse en Temps Réel" : "Real-time Analysis"  },
-    { icon: Target, text: lang === "fr" ? "Localisation Tumorale" : "Tumor Localization"  },
-    { icon: Shield, text: lang === "fr" ? "Conforme HIPAA"        : "HIPAA Compliant"     },
+    { icon: Zap,    text: lang === "fr" ? "Analyse en Temps Réel" : "Real-time Analysis" },
+    { icon: Target, text: lang === "fr" ? "Localisation Tumorale" : "Tumor Localization" },
+    { icon: Shield, text: lang === "fr" ? "Conforme HIPAA"        : "HIPAA Compliant"    },
   ];
 
-  const line1Words = lang === "fr"
-    ? ["Détecter", "le", "Cancer", "Cérébral"]
-    : ["Detect", "Brain", "Cancer"];
+  const line1 = lang === "fr"
+    ? [
+        { word: "Détecter", green: false },
+        { word: "le",       green: false },
+        { word: "Cancer",   green: true  },
+        { word: "Cérébral", green: false },
+      ]
+    : [
+        { word: "Detect", green: false },
+        { word: "Brain",  green: false },
+        { word: "Cancer", green: true  },
+      ];
 
   const line2Words = lang === "fr"
     ? [
@@ -41,6 +200,10 @@ const HeroSection = () => {
         { word: "Late"   },
       ];
 
+  const line2Gradient = theme === "light"
+    ? "linear-gradient(90deg, hsl(40,65%,35%) 0%, hsl(45,70%,38%) 40%, hsl(50,65%,34%) 100%)"
+    : "linear-gradient(90deg, hsl(217,70%,80%) 0%, hsl(217,91%,65%) 35%, hsl(43,95%,58%) 70%, hsl(47,100%,62%) 100%)";
+
   return (
     <section className="relative min-h-screen flex items-center overflow-hidden pt-16">
       <div className="absolute inset-0 z-0">
@@ -53,58 +216,17 @@ const HeroSection = () => {
           style={{ display: theme === "light" ? "none" : "block" }}
         />
 
-        {/* Light mode: animated gradient background */}
+        {/* Light mode */}
         {theme === "light" && (
           <>
             <div className="absolute inset-0" style={{
-              background: "linear-gradient(160deg, hsl(220,55%,93%) 0%, hsl(217,70%,88%) 35%, hsl(200,60%,90%) 65%, hsl(43,80%,90%) 100%)"
+              background: "linear-gradient(180deg, hsl(45,30%,93%) 0%, hsl(60,18%,92%) 20%, hsl(100,16%,91%) 45%, hsl(140,20%,89%) 70%, hsl(152,24%,87%) 100%)"
             }} />
-            <div className="absolute inset-0 opacity-20" style={{
-              backgroundImage: "linear-gradient(hsl(217,60%,50%,0.15) 1px, transparent 1px), linear-gradient(90deg, hsl(217,60%,50%,0.15) 1px, transparent 1px)",
-              backgroundSize: "60px 60px"
-            }} />
-            <motion.div
-              className="absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full"
-              style={{ background: "radial-gradient(circle, hsl(43,95%,65%,0.3) 0%, transparent 70%)" }}
-              animate={{ scale: [1, 1.12, 1], opacity: [0.7, 1, 0.7] }}
-              transition={{ duration: 7, repeat: Infinity }}
-            />
-            <motion.div
-              className="absolute -bottom-32 -left-32 w-[600px] h-[600px] rounded-full"
-              style={{ background: "radial-gradient(circle, hsl(217,85%,60%,0.25) 0%, transparent 70%)" }}
-              animate={{ scale: [1.1, 1, 1.1], opacity: [0.7, 1, 0.7] }}
-              transition={{ duration: 9, repeat: Infinity }}
-            />
-            <motion.div
-              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full"
-              style={{ background: "radial-gradient(circle, hsl(217,70%,65%,0.12) 0%, transparent 60%)" }}
-              animate={{ scale: [1, 1.15, 1] }}
-              transition={{ duration: 5, repeat: Infinity }}
-            />
-            {[
-              { top: "15%", left: "10%", size: 7,  delay: 0,   color: "hsl(217,85%,55%,0.6)" },
-              { top: "25%", left: "88%", size: 5,  delay: 1,   color: "hsl(43,95%,55%,0.6)"  },
-              { top: "60%", left: "6%",  size: 6,  delay: 2,   color: "hsl(217,85%,55%,0.6)" },
-              { top: "72%", left: "91%", size: 8,  delay: 0.5, color: "hsl(43,95%,55%,0.6)"  },
-              { top: "42%", left: "85%", size: 5,  delay: 1.5, color: "hsl(217,85%,55%,0.6)" },
-              { top: "80%", left: "30%", size: 4,  delay: 2.5, color: "hsl(43,95%,55%,0.5)"  },
-              { top: "10%", left: "55%", size: 3,  delay: 3,   color: "hsl(217,70%,60%,0.5)" },
-            ].map((dot, i) => (
-              <motion.div
-                key={i}
-                className="absolute rounded-full"
-                style={{ top: dot.top, left: dot.left, width: dot.size, height: dot.size, background: dot.color }}
-                animate={{ y: [0, -18, 0], opacity: [0.4, 1, 0.4] }}
-                transition={{ duration: 4 + i * 0.5, repeat: Infinity, delay: dot.delay }}
-              />
-            ))}
-            <div className="absolute inset-0" style={{
-              background: "radial-gradient(ellipse 80% 80% at 50% 50%, transparent 50%, hsl(220,50%,90%,0.25) 100%)"
-            }} />
+            <MedicalDecorations />
           </>
         )}
 
-        {/* Dark mode overlays */}
+        {/* Dark mode overlays — intouchés */}
         {theme === "dark" && (
           <>
             <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/30 to-background" />
@@ -113,6 +235,9 @@ const HeroSection = () => {
           </>
         )}
       </div>
+
+      {/* Croix flottante — light mode uniquement */}
+      {theme === "light" && <FloatingCross />}
 
       <div className="container mx-auto px-4 relative z-10">
         <div className="max-w-3xl mx-auto text-center">
@@ -146,22 +271,23 @@ const HeroSection = () => {
                   hidden: {},
                 }}
               >
-                {line1Words.map((word, i) => (
+                {line1.map(({ word, green }, i) => (
                   <motion.span
                     key={i}
                     variants={{
-                      hidden:   { opacity: 0, y: 50, filter: "blur(8px)" },
-                      visible:  { opacity: 1, y: 0,  filter: "blur(0px)" },
+                      hidden:  { opacity: 0, y: 50, filter: "blur(8px)" },
+                      visible: { opacity: 1, y: 0,  filter: "blur(0px)" },
                     }}
                     transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
                     className="inline-block"
+                    style={green && theme === "light" ? { color: "hsl(152,40%,28%)" } : undefined}
                   >
                     {word}
                   </motion.span>
                 ))}
               </motion.div>
 
-              {/* Ligne 2 — dégradé bleu → gold sur tout le bloc */}
+              {/* Ligne 2 — doré/olive */}
               <motion.div
                 className="flex flex-wrap justify-center gap-x-3"
                 initial="hidden"
@@ -171,7 +297,7 @@ const HeroSection = () => {
                   hidden: {},
                 }}
                 style={{
-                  backgroundImage: "linear-gradient(90deg, hsl(217,70%,80%) 0%, hsl(217,91%,65%) 35%, hsl(43,95%,58%) 70%, hsl(47,100%,62%) 100%)",
+                  backgroundImage: line2Gradient,
                   WebkitBackgroundClip: "text",
                   WebkitTextFillColor: "transparent",
                   backgroundClip: "text",

@@ -6,6 +6,11 @@ import {
   Sparkles, CheckCircle2, Shield, Zap, Activity, Cpu,
   ArrowRight, Scan, ChevronRight, AlertTriangle,
 } from "lucide-react";
+import { DayPicker } from "react-day-picker";
+import { format } from "date-fns";
+import { fr, enUS } from "date-fns/locale";
+import "react-day-picker/dist/style.css";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -50,6 +55,82 @@ const severityConfig = {
   low:    { labelFr: "Léger",    labelEn: "Minor",    color: "#3b82f6", glow: "rgba(59,130,246,0.3)" },
 };
 
+// ── CSS injecté pour le calendrier custom ──────────────────────────────────
+const CALENDAR_CSS = `
+  @keyframes nsFloatIn {
+    from { opacity: 0; transform: translateY(14px) scale(0.95); }
+    to   { opacity: 1; transform: translateY(0px)  scale(1);    }
+  }
+  .ns-cal-wrap { animation: nsFloatIn 0.28s cubic-bezier(0.34,1.56,0.64,1); }
+
+  .ns-cal .rdp { margin: 0; }
+  .ns-cal .rdp-months { justify-content: center; }
+  .ns-cal .rdp-caption {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0 4px 10px 4px;
+    border-bottom: 1px solid rgba(245,158,11,0.2);
+    margin-bottom: 8px;
+  }
+  .ns-cal .rdp-caption_label {
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    font-size: 14px !important;
+  }
+  .ns-cal .rdp-nav { display: flex; gap: 6px; }
+  .ns-cal .rdp-nav_button {
+    color: rgba(255,255,255,0.55) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 8px !important;
+    width: 28px !important; height: 28px !important;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent !important;
+    transition: all 0.2s;
+  }
+  .ns-cal .rdp-nav_button:hover {
+    color: #ffffff !important;
+    background: rgba(59,130,246,0.25) !important;
+    border-color: rgba(59,130,246,0.5) !important;
+  }
+  .ns-cal .rdp-head_cell {
+    color: rgba(245,158,11,0.85) !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    width: 36px !important;
+    padding-bottom: 6px;
+  }
+  .ns-cal .rdp-cell { width: 36px !important; height: 36px !important; }
+  .ns-cal .rdp-button {
+    color: rgba(255,255,255,0.8) !important;
+    font-size: 13px !important;
+    width: 34px !important; height: 34px !important;
+    border-radius: 8px !important;
+    transition: all 0.15s;
+  }
+  .ns-cal .rdp-button:hover:not([disabled]):not(.rdp-day_selected) {
+    background: rgba(59,130,246,0.22) !important;
+    color: #ffffff !important;
+  }
+  .ns-cal .rdp-day_selected .rdp-button,
+  .ns-cal .rdp-day_selected .rdp-button:hover {
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8) !important;
+    color: #ffffff !important;
+    box-shadow: 0 0 14px rgba(59,130,246,0.55) !important;
+  }
+  .ns-cal .rdp-day_today .rdp-button {
+    border: 1.5px solid rgba(245,158,11,0.75) !important;
+    color: #f59e0b !important;
+    font-weight: 700 !important;
+  }
+  .ns-cal .rdp-day_outside .rdp-button {
+    color: rgba(255,255,255,0.2) !important;
+  }
+  .ns-cal .rdp-day_disabled .rdp-button {
+    color: rgba(255,255,255,0.15) !important;
+    cursor: not-allowed;
+  }
+`;
+
 const UploadPage = () => {
   const navigate = useNavigate();
   const { user, session } = useAuth();
@@ -61,6 +142,10 @@ const UploadPage = () => {
   const [patientName, setPatientName] = useState("");
   const [patientId, setPatientId] = useState("");
   const [scanDate, setScanDate] = useState("");
+  // ── 2 nouveaux states pour le calendrier ──
+  const [scanDateObj, setScanDateObj] = useState<Date | undefined>(undefined);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  // ──────────────────────────────────────────
   const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -165,7 +250,6 @@ const UploadPage = () => {
   const medCount  = selectedSymptoms.filter(s => SYMPTOMS.find(sy => sy.label === s && sy.severity === "medium")).length;
   const lowCount  = selectedSymptoms.filter(s => SYMPTOMS.find(sy => sy.label === s && sy.severity === "low")).length;
 
-  // Feature badges — shown BELOW the cards
   const features = [
     { icon: Zap, label: t("up.realtimeAI"), desc: t("up.realtimeDesc") },
     { icon: Shield, label: t("up.hipaa"), desc: t("up.hipaaDesc") },
@@ -174,6 +258,10 @@ const UploadPage = () => {
 
   return (
     <div className="min-h-screen bg-background relative">
+
+      {/* CSS calendrier injecté une seule fois */}
+      <style>{CALENDAR_CSS}</style>
+
       <div className="py-8 relative z-10">
         <div className="container mx-auto px-4">
 
@@ -224,7 +312,9 @@ const UploadPage = () => {
           <div className="flex justify-center">
             <AnimatePresence mode="wait">
 
-              {/* STEP 1 — Patient Info — bigger card with box-shadow */}
+              {/* ══════════════════════════════════════════════════════════
+                  STEP 1 — Patient Info
+              ══════════════════════════════════════════════════════════ */}
               {step === 1 && (
                 <motion.div key="step1" initial={{ opacity: 0, y: 40, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -30, scale: 0.95 }} transition={{ duration: 0.4, type: "spring" }} className="w-full max-w-lg">
                   <motion.div
@@ -240,19 +330,145 @@ const UploadPage = () => {
                         <p className="text-sm text-muted-foreground">{t("up.required")}</p>
                       </div>
                     </div>
-                    {[
-                      { icon: User, label: t("up.patientName"), value: patientName, setter: (v: string) => { if (/^[a-zA-ZÀ-ÖØ-öø-ÿ\s'\-]*$/.test(v)) setPatientName(v); }, placeholder: lang === "fr" ? "ex. Jean Dupont" : "e.g. John Doe", required: true },
-                      { icon: Hash, label: t("up.patientId"), value: patientId, setter: (v: string) => { if (/^\d*$/.test(v)) setPatientId(v); }, placeholder: lang === "fr" ? "ex. 123456" : "e.g. 123456" },
-                      { icon: Calendar, label: t("up.scanDate"), value: scanDate, setter: setScanDate, placeholder: "", type: "date" },
-                    ].map((field, i) => (
-                      <motion.div key={field.label} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 + i * 0.1 }} className="space-y-2">
-                        <Label className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <field.icon className="w-3.5 h-3.5 text-accent" /> {field.label}
-                          {field.required && <span className="text-accent text-xs">*</span>}
-                        </Label>
-                        <Input type={field.type || "text"} placeholder={field.placeholder} value={field.value} onChange={(e) => field.setter(e.target.value)} className="bg-secondary/50 border-border focus:border-accent/50 transition-all duration-300 h-11" />
-                      </motion.div>
-                    ))}
+
+                    {/* Champ Nom */}
+                    <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.1 }} className="space-y-2">
+                      <Label className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <User className="w-3.5 h-3.5 text-accent" /> {t("up.patientName")}
+                        <span className="text-accent text-xs">*</span>
+                      </Label>
+                      <Input
+                        type="text"
+                        placeholder={lang === "fr" ? "ex. Jean Dupont" : "e.g. John Doe"}
+                        value={patientName}
+                        onChange={(e) => { if (/^[a-zA-ZÀ-ÖØ-öø-ÿ\s'\-]*$/.test(e.target.value)) setPatientName(e.target.value); }}
+                        className="bg-secondary/50 border-border focus:border-accent/50 transition-all duration-300 h-11"
+                      />
+                    </motion.div>
+
+                    {/* Champ ID */}
+                    <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2 }} className="space-y-2">
+                      <Label className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Hash className="w-3.5 h-3.5 text-accent" /> {t("up.patientId")}
+                      </Label>
+                      <Input
+                        type="text"
+                        placeholder={lang === "fr" ? "ex. 123456" : "e.g. 123456"}
+                        value={patientId}
+                        onChange={(e) => { if (/^\d*$/.test(e.target.value)) setPatientId(e.target.value); }}
+                        className="bg-secondary/50 border-border focus:border-accent/50 transition-all duration-300 h-11"
+                      />
+                    </motion.div>
+
+                    {/* ── Champ Date — DatePicker custom ── */}
+                    <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.3 }} className="space-y-2">
+                      <Label className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Calendar className="w-3.5 h-3.5 text-accent" /> {t("up.scanDate")}
+                      </Label>
+
+                      <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className="w-full h-11 px-4 rounded-md flex items-center justify-between text-sm transition-all duration-300"
+                            style={{
+                              background: "rgba(255,255,255,0.03)",
+                              border: calendarOpen
+                                ? "1px solid rgba(59,130,246,0.75)"
+                                : "1px solid hsl(var(--border))",
+                              color: scanDateObj ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))",
+                              boxShadow: calendarOpen ? "0 0 0 3px rgba(59,130,246,0.15)" : "none",
+                              borderRadius: "calc(var(--radius) - 2px)",
+                            }}
+                          >
+                            <span>
+                              {scanDateObj
+                                ? format(scanDateObj, "dd / MM / yyyy")
+                                : lang === "fr" ? "jj / mm / aaaa" : "dd / mm / yyyy"}
+                            </span>
+                            <Calendar
+                              className="w-4 h-4 flex-shrink-0"
+                              style={{ color: "rgba(245,158,11,0.8)" }}
+                            />
+                          </button>
+                        </PopoverTrigger>
+
+                        <PopoverContent
+                          className="p-0 w-auto ns-cal-wrap"
+                          align="start"
+                          sideOffset={6}
+                          style={{
+                            background: "linear-gradient(135deg, #080e1f 0%, #0d1530 100%)",
+                            border: "1px solid rgba(59,130,246,0.28)",
+                            borderRadius: "16px",
+                            boxShadow: "0 24px 64px rgba(0,0,0,0.65), 0 0 40px rgba(59,130,246,0.12), 0 0 20px rgba(245,158,11,0.06)",
+                            overflow: "hidden",
+                          }}
+                        >
+                          {/* Header doré */}
+                          <div
+                            className="flex items-center gap-2 px-5 py-3"
+                            style={{
+                              borderBottom: "1px solid rgba(245,158,11,0.18)",
+                              background: "rgba(245,158,11,0.05)",
+                            }}
+                          >
+                            <Calendar className="w-3.5 h-3.5" style={{ color: "#f59e0b" }} />
+                            <span style={{ color: "#f59e0b", fontSize: "11px", fontWeight: 700, letterSpacing: "0.09em" }}>
+                              {lang === "fr" ? "DATE DU SCAN" : "SCAN DATE"}
+                            </span>
+                          </div>
+
+                          {/* DayPicker */}
+                          <div className="p-3 ns-cal">
+                            <DayPicker
+                              mode="single"
+                              selected={scanDateObj}
+                              onSelect={(date) => {
+                                setScanDateObj(date);
+                                setScanDate(date ? format(date, "dd/MM/yyyy") : "");
+                                setCalendarOpen(false);
+                              }}
+                              locale={lang === "fr" ? fr : enUS}
+                              showOutsideDays
+                            />
+                          </div>
+
+                          {/* Footer — bouton Effacer */}
+                          <div
+                            className="flex justify-end px-4 py-2"
+                            style={{ borderTop: "1px solid rgba(59,130,246,0.12)" }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setScanDateObj(undefined);
+                                setScanDate("");
+                                setCalendarOpen(false);
+                              }}
+                              className="text-xs px-3 py-1.5 rounded-md transition-all duration-200"
+                              style={{
+                                color: "rgba(255,255,255,0.4)",
+                                border: "1px solid rgba(255,255,255,0.08)",
+                                background: "transparent",
+                              }}
+                              onMouseEnter={e => {
+                                e.currentTarget.style.color = "#ffffff";
+                                e.currentTarget.style.borderColor = "rgba(255,255,255,0.2)";
+                              }}
+                              onMouseLeave={e => {
+                                e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+                                e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
+                              }}
+                            >
+                              {lang === "fr" ? "Effacer" : "Clear"}
+                            </button>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </motion.div>
+                    {/* ── Fin DatePicker ── */}
+
                     <div className="pt-4 border-t border-border flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <motion.div animate={{ scale: [1, 1.3, 1] }} transition={{ duration: 2, repeat: Infinity }} className="w-2 h-2 rounded-full bg-accent" />
@@ -272,7 +488,9 @@ const UploadPage = () => {
                 </motion.div>
               )}
 
-              {/* STEP 2 — Symptoms */}
+              {/* ══════════════════════════════════════════════════════════
+                  STEP 2 — Symptoms (identique à l'original)
+              ══════════════════════════════════════════════════════════ */}
               {step === 2 && (
                 <motion.div key="step2" initial={{ opacity: 0, y: 40, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -30, scale: 0.95 }} transition={{ duration: 0.4, type: "spring" }} className="w-full max-w-2xl">
                   <div
@@ -410,7 +628,9 @@ const UploadPage = () => {
                 </motion.div>
               )}
 
-              {/* STEP 3 — IRM Upload — bigger, more prominent */}
+              {/* ══════════════════════════════════════════════════════════
+                  STEP 3 — IRM Upload (identique à l'original)
+              ══════════════════════════════════════════════════════════ */}
               {step === 3 && (
                 <motion.div key="step3" initial={{ opacity: 0, y: 40, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -30, scale: 0.95 }} transition={{ duration: 0.4, type: "spring" }} className="w-full max-w-xl">
                   <motion.div
@@ -428,8 +648,6 @@ const UploadPage = () => {
                         <p className="text-sm text-muted-foreground">{t("up.dropScan")}</p>
                       </div>
                     </div>
-
-                    {/* Upload zone — larger */}
                     <motion.div
                       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                       onDragLeave={() => setIsDragging(false)}
@@ -439,7 +657,6 @@ const UploadPage = () => {
                       style={!preview && !isDragging ? { background: "linear-gradient(135deg, rgba(59,130,246,0.04), rgba(245,158,11,0.04))" } : {}}
                     >
                       {isDragging && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="absolute inset-0 bg-gradient-to-br from-accent/5 via-primary/5 to-accent/5 pointer-events-none" />}
-
                       {preview ? (
                         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: "spring" }} className="relative">
                           <div className="relative rounded-xl overflow-hidden group">
@@ -479,7 +696,6 @@ const UploadPage = () => {
                         </div>
                       )}
                     </motion.div>
-
                     <div className="flex items-center justify-between pt-2 border-t border-border">
                       <button onClick={() => setStep(2)} className="text-sm text-muted-foreground hover:text-foreground transition-colors">{t("up.back")}</button>
                       {file && (
@@ -501,7 +717,9 @@ const UploadPage = () => {
                 </motion.div>
               )}
 
-              {/* STEP 4 — Analysis */}
+              {/* ══════════════════════════════════════════════════════════
+                  STEP 4 — Analysis (identique à l'original)
+              ══════════════════════════════════════════════════════════ */}
               {step === 4 && (
                 <motion.div key="step4" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: "spring", stiffness: 100 }} className="w-full max-w-2xl">
                   <div className="rounded-2xl bg-card border border-border shadow-card overflow-hidden">
@@ -567,7 +785,7 @@ const UploadPage = () => {
             </AnimatePresence>
           </div>
 
-          {/* Feature badges — below the cards */}
+          {/* Feature badges */}
           {step < 4 && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }} className="flex flex-wrap justify-center gap-4 mt-10">
               {features.map((f, i) => (
