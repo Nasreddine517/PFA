@@ -99,23 +99,26 @@ const ResultsPage = () => {
     void loadAnalysis();
   }, [id, routeState.patientId, routeState.patientName, routeState.scanDate, session?.accessToken, user]);
 
-  const handleDownloadPDF = () => {
+const handleDownloadPDF = () => {
     if (!scan) return;
     generateMedicalReport({
-      patientName: scan.patient_name,
-      patientId: scan.patient_id_number || "N/A",
-      scanDate: new Date(scan.scan_date).toLocaleDateString(),
-      scanType: scan.scan_type || "T1-weighted MRI",
-      result: scan.result,
-      confidence: scan.confidence || 0,
-      tumorType: scan.tumor_type || undefined,
-      tumorGrade: scan.tumor_grade || undefined,
-      tumorLocation: scan.tumor_location || undefined,
-      tumorSize: scan.tumor_size || undefined,
-      tumorVolume: scan.tumor_volume || undefined,
-      reportText: scan.report_text || undefined,
-      imageUrl: scan.image_url || undefined,
-      boundingBox: scan.bounding_box || undefined,
+      patientName:     scan.patient_name,
+      patientId:       scan.patient_id_number || "N/A",
+      scanDate:        scan.scan_date,          // ← raw string, formatDate() s'en occupe
+      scanType:        scan.scan_type || "T1-weighted MRI",
+      result:          scan.result,
+      confidence:      scan.confidence || 0,
+      tumorType:       scan.tumor_type    || undefined,
+      tumorGrade:      scan.tumor_grade   || undefined,
+      tumorLocation:   scan.tumor_location || undefined,
+      tumorSize:       scan.tumor_size    || undefined,
+      tumorVolume:     scan.tumor_volume  || undefined,
+      reportText:      scan.report_text   || undefined,
+      imageUrl:        scan.image_url     || undefined,
+      boundingBox:     scan.bounding_box  || undefined,
+      doctorName:      user?.fullName     || undefined,
+      doctorSpecialty: user?.specialty    || undefined,
+      doctorHospital:  user?.hospital     || undefined,
     });
   };
 

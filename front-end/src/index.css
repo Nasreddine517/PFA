@@ -5,7 +5,7 @@
 @tailwind utilities;
 
 @layer base {
-  /* DARK MODE (default) — INTOUCHÉ */
+  /* DARK MODE — INTOUCHÉ */
   :root, .dark {
     --background: 220 30% 6%;
     --foreground: 210 20% 92%;
@@ -46,43 +46,43 @@
     --font-body: 'Inter', sans-serif;
   }
 
-  /* LIGHT MODE — Style C : Beige + Vert Sauge Médical */
+  /* LIGHT MODE — Beige + Vert Sauge + Contraste renforcé */
   .light {
-    --background: 40 30% 93%;
-    --foreground: 150 25% 12%;
-    --card: 40 20% 98%;
-    --card-foreground: 150 25% 12%;
-    --popover: 40 20% 98%;
-    --popover-foreground: 150 25% 12%;
-    --primary: 152 35% 38%;
+    --background: 40 25% 90%;
+    --foreground: 150 30% 10%;
+    --card: 40 18% 96%;
+    --card-foreground: 150 30% 10%;
+    --popover: 40 18% 96%;
+    --popover-foreground: 150 30% 10%;
+    --primary: 152 38% 32%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 40 25% 86%;
-    --secondary-foreground: 150 25% 18%;
-    --muted: 40 20% 88%;
-    --muted-foreground: 150 15% 40%;
-    --accent: 82 30% 48%;
+    --secondary: 40 22% 82%;
+    --secondary-foreground: 150 28% 15%;
+    --muted: 40 18% 85%;
+    --muted-foreground: 150 18% 32%;
+    --accent: 40 62% 36%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-    --border: 40 25% 78%;
-    --input: 40 25% 90%;
-    --ring: 152 35% 38%;
+    --border: 40 22% 72%;
+    --input: 40 22% 86%;
+    --ring: 152 38% 32%;
     --radius: 0.75rem;
-    --sidebar-background: 40 25% 96%;
-    --sidebar-foreground: 150 25% 15%;
-    --sidebar-primary: 152 35% 38%;
+    --sidebar-background: 40 22% 93%;
+    --sidebar-foreground: 150 28% 12%;
+    --sidebar-primary: 152 38% 32%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 40 20% 90%;
-    --sidebar-accent-foreground: 150 25% 15%;
-    --sidebar-border: 40 25% 82%;
-    --sidebar-ring: 152 35% 38%;
-    --gradient-primary: linear-gradient(135deg, hsl(152 35% 38%), hsl(82 30% 48%));
-    --gradient-dark: linear-gradient(160deg, hsl(40 30% 93%), hsl(152 20% 88%));
-    --gradient-card: linear-gradient(135deg, hsl(40 20% 98%), hsl(152 15% 94%));
-    --gradient-glow: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), hsl(152 35% 38% / 0.1), transparent 40%);
-    --shadow-glow: 0 0 40px hsl(152 35% 38% / 0.2);
-    --shadow-card: 0 4px 24px hsl(150 30% 20% / 0.1);
-    --surface-glass: hsl(40 20% 98% / 0.75);
+    --sidebar-accent: 40 18% 87%;
+    --sidebar-accent-foreground: 150 28% 12%;
+    --sidebar-border: 40 22% 78%;
+    --sidebar-ring: 152 38% 32%;
+    --gradient-primary: linear-gradient(135deg, hsl(152 38% 32%), hsl(40 62% 36%));
+    --gradient-dark: linear-gradient(160deg, hsl(40 25% 90%), hsl(152 22% 84%));
+    --gradient-card: linear-gradient(135deg, hsl(40 18% 96%), hsl(152 15% 90%));
+    --gradient-glow: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), hsl(152 38% 32% / 0.1), transparent 40%);
+    --shadow-glow: 0 0 40px hsl(152 38% 32% / 0.22);
+    --shadow-card: 0 4px 24px hsl(150 30% 15% / 0.12);
+    --surface-glass: hsl(40 18% 97% / 0.78);
     --font-display: 'Space Grotesk', sans-serif;
     --font-body: 'Inter', sans-serif;
   }
@@ -130,109 +130,115 @@
 }
 
 /* ============================================
-   LIGHT MODE GLOBAL ENHANCEMENTS — Beige + Vert Sauge
+   LIGHT MODE GLOBAL — Beige + Vert Sauge foncé
    ============================================ */
 
 .light body {
   background: linear-gradient(160deg,
-    hsl(40,  35%, 93%) 0%,
-    hsl(60,  20%, 91%) 25%,
-    hsl(100, 18%, 90%) 55%,
-    hsl(152, 22%, 88%) 100%
+    hsl(40,  30%, 89%) 0%,
+    hsl(60,  18%, 88%) 25%,
+    hsl(100, 16%, 87%) 55%,
+    hsl(152, 22%, 84%) 100%
   );
   min-height: 100vh;
 }
 
 .light .bg-background {
   background: linear-gradient(160deg,
-    hsl(40,  35%, 93%) 0%,
-    hsl(60,  20%, 91%) 25%,
-    hsl(100, 18%, 90%) 55%,
-    hsl(152, 22%, 88%) 100%
+    hsl(40,  30%, 89%) 0%,
+    hsl(60,  18%, 88%) 25%,
+    hsl(100, 16%, 87%) 55%,
+    hsl(152, 22%, 84%) 100%
   ) !important;
 }
 
 .light .bg-glass {
-  background: hsl(40, 20%, 98%, 0.78);
+  background: hsl(40, 18%, 96%, 0.80);
   backdrop-filter: blur(16px);
-  border: 1px solid hsl(40, 30%, 80%);
-  box-shadow: 0 4px 20px hsl(152, 30%, 30%, 0.08);
+  border: 1px solid hsl(40, 28%, 72%);
+  box-shadow: 0 4px 20px hsl(152, 28%, 22%, 0.10);
 }
 
 .light .shadow-card {
   box-shadow:
-    0 2px 0 0 hsl(152, 30%, 70%),
-    0 6px 28px hsl(152, 25%, 30%, 0.11),
-    0 2px 6px  hsl(152, 25%, 30%, 0.07) !important;
+    0 2px 0 0 hsl(152, 30%, 62%),
+    0 6px 28px hsl(152, 25%, 22%, 0.14),
+    0 2px 6px  hsl(152, 25%, 22%, 0.08) !important;
 }
 
 .light [data-sidebar="sidebar"] {
   background: linear-gradient(180deg,
-    hsl(40,  30%, 97%) 0%,
-    hsl(80,  18%, 94%) 50%,
-    hsl(152, 20%, 92%) 100%
+    hsl(40,  28%, 94%) 0%,
+    hsl(80,  16%, 90%) 50%,
+    hsl(152, 20%, 87%) 100%
   ) !important;
-  border-right: 1px solid hsl(40, 25%, 82%) !important;
+  border-right: 1px solid hsl(40, 22%, 76%) !important;
 }
 
 .light header {
-  background: hsl(40, 30%, 96%, 0.92) !important;
-  border-bottom: 1px solid hsl(40, 25%, 82%) !important;
+  background: hsl(40, 28%, 92%, 0.94) !important;
+  border-bottom: 1px solid hsl(40, 22%, 76%) !important;
   backdrop-filter: blur(12px);
 }
 
 .light input,
 .light textarea {
-  background: hsl(40, 20%, 99%) !important;
-  border-color: hsl(40, 30%, 76%) !important;
+  background: hsl(40, 18%, 97%) !important;
+  border-color: hsl(40, 28%, 70%) !important;
+  color: hsl(150, 30%, 10%) !important;
 }
 .light input:focus,
 .light textarea:focus {
-  border-color: hsl(152, 35%, 40%) !important;
-  box-shadow: 0 0 0 3px hsl(152, 35%, 40%, 0.14) !important;
+  border-color: hsl(152, 38%, 34%) !important;
+  box-shadow: 0 0 0 3px hsl(152, 38%, 34%, 0.14) !important;
 }
 
 .light .recharts-cartesian-grid line {
-  stroke: hsl(40, 30%, 80%) !important;
+  stroke: hsl(40, 28%, 74%) !important;
 }
 
 .light footer {
   background: linear-gradient(180deg,
-    hsl(40, 25%, 91%),
-    hsl(152, 18%, 88%)
+    hsl(40, 22%, 86%),
+    hsl(152, 18%, 82%)
   ) !important;
-  border-top: 1px solid hsl(40, 25%, 80%) !important;
+  border-top: 1px solid hsl(40, 22%, 74%) !important;
 }
 
 .light .bg-card.border-border {
-  background: hsl(40, 20%, 98%) !important;
-  border: 1px solid hsl(40, 25%, 80%) !important;
-  box-shadow: 0 2px 12px hsl(152, 25%, 30%, 0.07);
+  background: hsl(40, 18%, 96%) !important;
+  border: 1px solid hsl(40, 22%, 74%) !important;
+  box-shadow: 0 2px 12px hsl(152, 22%, 22%, 0.08);
 }
 
-.light .bg-primary\/10 { background: hsl(152, 35%, 94%) !important; }
-.light .bg-accent\/10  { background: hsl(82,  30%, 93%) !important; }
+.light .bg-primary\/10 { background: hsl(152, 38%, 90%) !important; }
+.light .bg-accent\/10  { background: hsl(40,  62%, 90%) !important; }
 
-/* Boutons primaires en vert sauge */
 .light .bg-primary {
-  background: hsl(152, 35%, 38%) !important;
+  background: hsl(152, 38%, 32%) !important;
 }
 .light .bg-primary:hover {
-  background: hsl(152, 35%, 32%) !important;
+  background: hsl(152, 38%, 26%) !important;
 }
 
-/* Texte gradient en vert sauge */
 .light .text-gradient {
-  background-image: linear-gradient(135deg, hsl(152, 35%, 32%), hsl(82, 30%, 42%)) !important;
+  background-image: linear-gradient(135deg, hsl(152, 38%, 26%), hsl(40, 62%, 32%)) !important;
 }
 
-/* Badge / pill médical (ex: "Imagerie Médicale par IA") */
 .light .border-primary\/30 {
-  border-color: hsl(152, 35%, 70%) !important;
+  border-color: hsl(152, 38%, 65%) !important;
 }
 .light .text-primary {
-  color: hsl(152, 35%, 32%) !important;
+  color: hsl(152, 38%, 28%) !important;
 }
 .light .text-accent {
-  color: hsl(82, 35%, 38%) !important;
+  color: hsl(40, 62%, 32%) !important;
+}
+
+/* Textes plus foncés en light pour lisibilité */
+.light .text-muted-foreground {
+  color: hsl(150, 18%, 30%) !important;
+}
+.light p {
+  color: hsl(150, 20%, 25%);
 }
