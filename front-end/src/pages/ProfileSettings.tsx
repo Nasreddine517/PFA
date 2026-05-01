@@ -14,12 +14,13 @@ const ProfileSettings = () => {
   const { theme } = useTheme();
   const navigate = useNavigate();
   const isLight = theme === "light";
+
   const [displayName, setDisplayName] = useState("");
-  const [specialty, setSpecialty] = useState("");
-  const [hospital, setHospital] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [specialty, setSpecialty]     = useState("");
+  const [hospital, setHospital]       = useState("");
+  const [avatarUrl, setAvatarUrl]     = useState<string | null>(null);
+  const [saving, setSaving]           = useState(false);
+  const [loading, setLoading]         = useState(true);
 
   useEffect(() => {
     if (!user) return;
@@ -38,9 +39,7 @@ const ProfileSettings = () => {
       const imageUrl = reader.result as string;
       setAvatarUrl(imageUrl);
       void updateUserProfile({ profileImage: imageUrl })
-        .then(() => {
-          toast.success("Photo de profil mise à jour !");
-        })
+        .then(() => toast.success("Photo de profil mise à jour !"))
         .catch((error: unknown) => {
           const message = error instanceof Error ? error.message : "Erreur lors de la mise à jour de la photo.";
           toast.error(message);
@@ -53,12 +52,7 @@ const ProfileSettings = () => {
     if (!user) return;
     setSaving(true);
     try {
-      await updateUserProfile({
-        fullName: displayName,
-        specialty: specialty || null,
-        hospital: hospital || null,
-        profileImage: avatarUrl || undefined,
-      });
+      await updateUserProfile({ fullName: displayName, specialty: specialty || null, hospital: hospital || null, profileImage: avatarUrl || undefined });
       toast.success("Profil mis à jour !");
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Erreur lors de la mise à jour du profil.";
@@ -82,36 +76,38 @@ const ProfileSettings = () => {
     );
   }
 
+  const titleGradient = isLight
+    ? "linear-gradient(90deg, hsl(152,40%,24%) 0%, hsl(152,35%,32%) 50%, hsl(40,60%,32%) 100%)"
+    : "linear-gradient(90deg, hsl(217,70%,80%) 0%, hsl(217,91%,65%) 35%, hsl(43,95%,58%) 70%, hsl(47,100%,62%) 100%)";
+
   return (
     <div className="p-6 max-w-2xl mx-auto min-h-screen">
-      {/* Header */}
+
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
         <h1
           className="font-display text-3xl font-bold"
-          style={{
-            backgroundImage: "linear-gradient(90deg, hsl(217,70%,80%) 0%, hsl(217,91%,65%) 35%, hsl(43,95%,58%) 70%, hsl(47,100%,62%) 100%)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            backgroundClip: "text",
-          }}
+          style={{ backgroundImage: titleGradient, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}
         >
-          Profile Settings
+          {isLight ? "Paramètres du Profil" : "Profile Settings"}
         </h1>
-        <p className="text-muted-foreground mt-1">Manage your doctor profile</p>
+        <p className="mt-1" style={{ color: isLight ? "hsl(150,18%,36%)" : undefined }}>
+          {isLight ? "Gérez votre profil médecin" : "Manage your doctor profile"}
+        </p>
       </motion.div>
 
-      {/* Card */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="rounded-2xl border border-border p-8"
+        className="rounded-2xl p-8"
         style={isLight ? {
-          background: "linear-gradient(135deg, hsl(0,0%,100%) 0%, hsl(217,45%,97%) 100%)",
-          boxShadow: "0 8px 40px hsl(217,60%,50%,0.12), 0 2px 0 0 hsl(43,95%,58%,0.3), 0 0 0 1px hsl(217,40%,82%)",
+          background: "hsl(40,18%,97%)",
+          border: "1px solid hsl(40,22%,74%)",
+          boxShadow: "0 4px 24px hsl(152,25%,25%,0.09), 0 2px 0 0 hsl(152,30%,65%)",
         } : {
           background: "linear-gradient(135deg, hsl(220,25%,11%) 0%, hsl(220,25%,9%) 100%)",
           boxShadow: "0 8px 40px rgba(59,130,246,0.12), 0 2px 0 0 hsl(43,95%,55%,0.2), 0 0 0 1px hsl(220,20%,20%)",
+          border: "1px solid hsl(var(--border))",
         }}
       >
         {/* Avatar */}
@@ -120,22 +116,32 @@ const ProfileSettings = () => {
             <div
               className="rounded-full p-0.5"
               style={{
-                background: "linear-gradient(135deg, hsl(217,91%,65%), hsl(43,95%,58%))",
+                background: isLight
+                  ? "linear-gradient(135deg, hsl(152,35%,55%), hsl(40,55%,50%))"
+                  : "linear-gradient(135deg, hsl(217,91%,65%), hsl(43,95%,58%))",
               }}
             >
-              <Avatar className="w-20 h-20 border-2 border-background">
+              <Avatar
+                className="w-20 h-20 border-2 border-background"
+                style={{ overflow: "hidden" }}
+              >
                 {avatarUrl ? (
                   <AvatarImage
                     src={avatarUrl}
-                    className="object-cover w-full h-full rounded-full"
-                    style={{ objectFit: "cover", objectPosition: "center" }}
+                    style={{
+                      objectFit: "cover",
+                      objectPosition: "center top",
+                      width: "100%",
+                      height: "100%",
+                      imageRendering: "auto",
+                    }}
                   />
                 ) : (
                   <AvatarFallback
                     className="text-xl font-bold font-display"
                     style={isLight ? {
-                      background: "linear-gradient(135deg, hsl(217,85%,88%), hsl(43,90%,88%))",
-                      color: "hsl(217,85%,35%)",
+                      background: "linear-gradient(135deg, hsl(152,28%,80%), hsl(40,40%,82%))",
+                      color: "hsl(152,38%,22%)",
                     } : {
                       background: "linear-gradient(135deg, hsl(217,60%,20%), hsl(43,60%,18%))",
                       color: "hsl(217,91%,75%)",
@@ -154,15 +160,19 @@ const ProfileSettings = () => {
               <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
             </label>
           </div>
+
           <div>
-            <h2 className="font-display text-xl font-semibold text-foreground">{displayName || "Doctor"}</h2>
-            <p className="text-sm text-muted-foreground">{user?.email}</p>
+            <h2 className="font-display text-xl font-semibold" style={{ color: isLight ? "hsl(150,30%,12%)" : undefined }}>
+              {displayName || "Doctor"}
+            </h2>
+            <p className="text-sm" style={{ color: isLight ? "hsl(150,16%,38%)" : undefined }}>{user?.email}</p>
             {specialty && (
               <span
                 className="text-xs px-2 py-0.5 rounded-full mt-1 inline-block font-medium"
                 style={isLight ? {
-                  background: "hsl(43,95%,90%)",
-                  color: "hsl(43,85%,35%)",
+                  background: "hsl(40,50%,88%)",
+                  color: "hsl(40,55%,30%)",
+                  border: "1px solid hsl(40,45%,74%)",
                 } : {
                   background: "hsl(43,60%,18%)",
                   color: "hsl(43,95%,65%)",
@@ -174,7 +184,7 @@ const ProfileSettings = () => {
           </div>
         </div>
 
-        {/* Fields */}
+        {/* Champs */}
         <div className="space-y-5">
           {[
             { icon: User, label: "Display Name", value: displayName, setter: setDisplayName, placeholder: "Dr. Jane Smith" },
@@ -188,39 +198,43 @@ const ProfileSettings = () => {
               transition={{ delay: 0.15 + i * 0.05 }}
               className="space-y-2"
             >
-              <Label className="flex items-center gap-2 text-muted-foreground text-sm">
+              <Label
+                className="flex items-center gap-2 text-sm"
+                style={{ color: isLight ? "hsl(150,18%,34%)" : undefined }}
+              >
                 <field.icon className="w-3.5 h-3.5" /> {field.label}
               </Label>
               <Input
                 value={field.value}
                 onChange={(e) => field.setter(e.target.value)}
                 placeholder={field.placeholder}
-                className="transition-all focus:shadow-glow focus:border-primary/40 h-11"
+                className="h-11 transition-all"
+                style={isLight ? {
+                  background: "hsl(40,16%,93%)",
+                  border: "1px solid hsl(40,22%,72%)",
+                  color: "hsl(150,28%,14%)",
+                } : {}}
               />
             </motion.div>
           ))}
 
-          {/* Save Button */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.35 }}
-            className="pt-4"
-          >
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }} className="pt-4">
             <motion.button
               onClick={handleSave}
               disabled={saving}
               whileHover={{ scale: 1.02, y: -1 }}
               whileTap={{ scale: 0.98 }}
-              className="w-full h-12 rounded-xl font-semibold text-base flex items-center justify-center gap-2 transition-all duration-300 relative overflow-hidden"
+              className="w-full h-12 rounded-xl font-semibold text-base flex items-center justify-center gap-2 transition-all duration-300"
               style={{
                 background: saving
-                  ? "hsl(217,50%,50%)"
-                  : "linear-gradient(135deg, hsl(217,85%,52%) 0%, hsl(217,91%,60%) 50%, hsl(43,95%,55%) 100%)",
+                  ? "hsl(152,30%,50%)"
+                  : isLight
+                    ? "linear-gradient(135deg, hsl(152,38%,30%) 0%, hsl(152,35%,38%) 50%, hsl(40,58%,36%) 100%)"
+                    : "linear-gradient(135deg, hsl(217,85%,52%) 0%, hsl(217,91%,60%) 50%, hsl(43,95%,55%) 100%)",
                 color: "white",
-                boxShadow: saving
-                  ? "none"
-                  : "0 4px 20px hsl(217,85%,52%,0.4), 0 0 0 1px hsl(43,95%,55%,0.2)",
+                boxShadow: saving ? "none" : isLight
+                  ? "0 4px 20px hsl(152,35%,32%,0.35)"
+                  : "0 4px 20px hsl(217,85%,52%,0.4)",
               }}
             >
               {saving ? (
@@ -236,15 +250,22 @@ const ProfileSettings = () => {
             </motion.button>
           </motion.div>
 
-          {/* Library shortcut */}
           <motion.button
             onClick={() => navigate("/library")}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="w-full h-10 rounded-xl font-medium text-sm flex items-center justify-center gap-2 border border-border transition-all duration-200 text-muted-foreground hover:text-foreground hover:border-primary/40"
+            className="w-full h-10 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all duration-200"
+            style={isLight ? {
+              border: "1px solid hsl(40,22%,72%)",
+              color: "hsl(150,20%,32%)",
+              background: "hsl(40,16%,93%)",
+            } : {
+              border: "1px solid hsl(var(--border))",
+              color: "hsl(var(--muted-foreground))",
+            }}
           >
             <BookOpen className="w-4 h-4" />
-            {" Bibliothèque Médicale"}
+            Bibliothèque Médicale
           </motion.button>
         </div>
       </motion.div>

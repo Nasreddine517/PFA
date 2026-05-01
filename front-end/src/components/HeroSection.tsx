@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { useState } from "react";
 import { ArrowRight, Shield, Zap, Target, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import AnimatedButton from "@/components/AnimatedButton";
@@ -6,152 +7,119 @@ import { AnimatedParagraph } from "@/components/AnimatedText";
 import { useTheme } from "@/contexts/ThemeContext";
 import brainBg from "@/assets/brain-hero-bg.png";
 
-const MedicalDecorations = () => (
-  <svg
-    className="absolute inset-0 w-full h-full pointer-events-none"
-    xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 1440 900"
-    preserveAspectRatio="xMidYMid slice"
-  >
-    <defs>
-      <pattern id="medGrid" width="55" height="55" patternUnits="userSpaceOnUse">
-        <path d="M 55 0 L 0 0 0 55" fill="none" stroke="hsl(152,25%,55%)" strokeWidth="0.35" opacity="0.25"/>
-      </pattern>
-    </defs>
+const AnimatedECG = () => {
+  const [cycle, setCycle] = useState(0);
 
-    {/* Grille */}
-    <rect width="1440" height="900" fill="url(#medGrid)" />
+  const startY = 175;
+  const stepY  = 22;
+  const maxY   = 820; // descend jusqu'en bas de la page
+  const y = startY + ((cycle * stepY) % (maxY - startY));
 
-    {/* ECG segment 1 — gauche vers ~480 */}
-    <motion.path
-      d="M 0 175
-         L 55 175 L 80 175
-         L 98 137 L 113 220 L 126 103 L 139 213 L 152 175
-         L 200 175 L 235 175
-         L 250 160 L 260 193 L 270 175
-         L 380 175 L 440 175
-         L 458 153 L 470 201 L 482 127 L 494 195 L 506 175
-         L 560 175"
-      fill="none"
-      stroke="hsl(40,58%,50%)"
-      strokeWidth="1.6"
-      opacity="0.6"
-      initial={{ pathLength: 0, opacity: 0 }}
-      animate={{ pathLength: 1, opacity: 0.6 }}
-      transition={{ duration: 2, ease: "easeInOut", delay: 0.3 }}
-    />
+  const ecgPath = `
+    M 0 ${y}
+    L 50 ${y} L 75 ${y}
+    L 93 ${y-42} L 108 ${y+48} L 121 ${y-78} L 134 ${y+42} L 147 ${y}
+    L 195 ${y} L 230 ${y}
+    L 245 ${y-16} L 255 ${y+20} L 265 ${y}
+    L 375 ${y} L 435 ${y}
+    L 453 ${y-24} L 465 ${y+28} L 477 ${y-58} L 489 ${y+22} L 501 ${y}
+    L 575 ${y} L 675 ${y} L 715 ${y}
+    L 733 ${y-24} L 745 ${y+32} L 757 ${y-58} L 769 ${y+26} L 781 ${y}
+    L 835 ${y} L 895 ${y}
+    L 911 ${y-18} L 921 ${y+22} L 931 ${y}
+    L 1015 ${y} L 1055 ${y}
+    L 1073 ${y-26} L 1085 ${y+34} L 1097 ${y-62} L 1109 ${y+28} L 1121 ${y}
+    L 1175 ${y} L 1235 ${y}
+    L 1251 ${y-15} L 1261 ${y+20} L 1271 ${y}
+    L 1440 ${y}
+  `;
 
-    {/* ECG segment 2 — milieu, repart de ~480 vers ~960 */}
-    <motion.path
-      d="M 560 175
-         L 620 175 L 680 175 L 720 175
-         L 738 153 L 750 205 L 762 122 L 774 200 L 786 175
-         L 840 175 L 900 175
-         L 916 158 L 926 195 L 936 175
-         L 960 175"
-      fill="none"
-      stroke="hsl(40,58%,50%)"
-      strokeWidth="1.6"
-      opacity="0.6"
-      initial={{ pathLength: 0, opacity: 0 }}
-      animate={{ pathLength: 1, opacity: 0.6 }}
-      transition={{ duration: 2, ease: "easeInOut", delay: 1.2 }}
-    />
-
-    {/* ECG segment 3 — repart de ~960 vers droite */}
-    <motion.path
-      d="M 960 175
-         L 1020 175 L 1060 175
-         L 1078 150 L 1090 206 L 1102 118 L 1114 202 L 1126 175
-         L 1180 175 L 1240 175
-         L 1256 161 L 1266 193 L 1276 175
-         L 1440 175"
-      fill="none"
-      stroke="hsl(40,58%,50%)"
-      strokeWidth="1.6"
-      opacity="0.6"
-      initial={{ pathLength: 0, opacity: 0 }}
-      animate={{ pathLength: 1, opacity: 0.6 }}
-      transition={{ duration: 2, ease: "easeInOut", delay: 2.1 }}
-    />
-
-    {/* Cercle cible grand haut gauche */}
-    <motion.g
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 1, delay: 0.8 }}
+  return (
+    <svg
+      className="absolute inset-0 w-full h-full pointer-events-none"
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 1440 900"
+      preserveAspectRatio="xMidYMid slice"
     >
-      <circle cx="90" cy="310" r="110" fill="none" stroke="hsl(40,42%,55%)" strokeWidth="0.8" opacity="0.3" />
-      <circle cx="90" cy="310" r="78"  fill="none" stroke="hsl(40,42%,55%)" strokeWidth="0.8" opacity="0.3" />
-      <circle cx="90" cy="310" r="46"  fill="none" stroke="hsl(40,42%,55%)" strokeWidth="0.8" opacity="0.3" />
-      <circle cx="90" cy="310" r="14"  fill="none" stroke="hsl(40,42%,55%)" strokeWidth="1"   opacity="0.4" />
-      <line x1="90"  y1="188" x2="90"  y2="252" stroke="hsl(40,42%,55%)" strokeWidth="0.8" opacity="0.38" />
-      <line x1="90"  y1="368" x2="90"  y2="432" stroke="hsl(40,42%,55%)" strokeWidth="0.8" opacity="0.38" />
-      <line x1="-32" y1="310" x2="32"  y2="310" stroke="hsl(40,42%,55%)" strokeWidth="0.8" opacity="0.38" />
-      <line x1="148" y1="310" x2="212" y2="310" stroke="hsl(40,42%,55%)" strokeWidth="0.8" opacity="0.38" />
-    </motion.g>
+      <defs>
+        <pattern id="medGrid" width="55" height="55" patternUnits="userSpaceOnUse">
+          <path d="M 55 0 L 0 0 0 55" fill="none" stroke="hsl(152,28%,48%)" strokeWidth="0.4" opacity="0.28"/>
+        </pattern>
+      </defs>
+      <rect width="1440" height="900" fill="url(#medGrid)" />
 
-    {/* Grand cercle halo gauche */}
-    <motion.circle
-      cx="80" cy="560" r="170"
-      fill="none" stroke="hsl(40,32%,60%)" strokeWidth="0.6" opacity="0.15"
-      initial={{ opacity: 0 }} animate={{ opacity: 0.15 }}
-      transition={{ duration: 1.5, delay: 0.5 }}
-    />
+      {/* ECG boucle — se dessine, s'efface, descend, recommence */}
+      <motion.path
+        key={cycle}
+        d={ecgPath}
+        fill="none"
+        stroke="hsl(40,60%,42%)"
+        strokeWidth="1.7"
+        initial={{ pathLength: 0, opacity: 0.75 }}
+        animate={{ pathLength: 1, opacity: [0.75, 0.75, 0] }}
+        transition={{
+          pathLength: { duration: 3.5, ease: "easeInOut" },
+          opacity: { duration: 3.5, times: [0, 0.72, 1], ease: "easeInOut" },
+        }}
+        onAnimationComplete={() => setCycle(c => c + 1)}
+      />
 
-    {/* Grand cercle halo droite */}
-    <motion.circle
-      cx="1380" cy="400" r="185"
-      fill="none" stroke="hsl(152,22%,62%)" strokeWidth="0.6" opacity="0.15"
-      initial={{ opacity: 0 }} animate={{ opacity: 0.15 }}
-      transition={{ duration: 1.5, delay: 0.7 }}
-    />
+      {/* Cercle cible grand haut gauche */}
+      <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1, delay: 0.8 }}>
+        <circle cx="90" cy="310" r="110" fill="none" stroke="hsl(40,45%,48%)" strokeWidth="0.9" opacity="0.35" />
+        <circle cx="90" cy="310" r="78"  fill="none" stroke="hsl(40,45%,48%)" strokeWidth="0.9" opacity="0.35" />
+        <circle cx="90" cy="310" r="46"  fill="none" stroke="hsl(40,45%,48%)" strokeWidth="0.9" opacity="0.35" />
+        <circle cx="90" cy="310" r="14"  fill="none" stroke="hsl(40,45%,48%)" strokeWidth="1.1" opacity="0.45" />
+        <line x1="90"  y1="188" x2="90"  y2="252" stroke="hsl(40,45%,48%)" strokeWidth="0.9" opacity="0.42" />
+        <line x1="90"  y1="368" x2="90"  y2="432" stroke="hsl(40,45%,48%)" strokeWidth="0.9" opacity="0.42" />
+        <line x1="-32" y1="310" x2="32"  y2="310" stroke="hsl(40,45%,48%)" strokeWidth="0.9" opacity="0.42" />
+        <line x1="148" y1="310" x2="212" y2="310" stroke="hsl(40,45%,48%)" strokeWidth="0.9" opacity="0.42" />
+      </motion.g>
 
-    {/* Cercle cible petit bas droite */}
-    <motion.g
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 1, delay: 1.2 }}
-    >
-      <circle cx="1360" cy="680" r="60" fill="none" stroke="hsl(152,26%,58%)" strokeWidth="0.8" opacity="0.28" />
-      <circle cx="1360" cy="680" r="38" fill="none" stroke="hsl(152,26%,58%)" strokeWidth="0.8" opacity="0.28" />
-      <circle cx="1360" cy="680" r="18" fill="none" stroke="hsl(152,26%,58%)" strokeWidth="0.8" opacity="0.28" />
-      <circle cx="1360" cy="680" r="5"  fill="hsl(152,26%,58%)"               opacity="0.22" />
-      <line x1="1360" y1="612" x2="1360" y2="634" stroke="hsl(152,26%,58%)" strokeWidth="0.8" opacity="0.32" />
-      <line x1="1360" y1="726" x2="1360" y2="748" stroke="hsl(152,26%,58%)" strokeWidth="0.8" opacity="0.32" />
-      <line x1="1292" y1="680" x2="1314" y2="680" stroke="hsl(152,26%,58%)" strokeWidth="0.8" opacity="0.32" />
-      <line x1="1406" y1="680" x2="1428" y2="680" stroke="hsl(152,26%,58%)" strokeWidth="0.8" opacity="0.32" />
-    </motion.g>
-  </svg>
-);
+      {/* Grand cercle halo gauche */}
+      <motion.circle cx="80" cy="560" r="170"
+        fill="none" stroke="hsl(40,35%,52%)" strokeWidth="0.7" opacity="0.18"
+        initial={{ opacity: 0 }} animate={{ opacity: 0.18 }}
+        transition={{ duration: 1.5, delay: 0.5 }}
+      />
 
-// Croix médicale flottante — composant séparé avec animation float
+      {/* Grand cercle halo droite */}
+      <motion.circle cx="1380" cy="400" r="185"
+        fill="none" stroke="hsl(152,25%,52%)" strokeWidth="0.7" opacity="0.18"
+        initial={{ opacity: 0 }} animate={{ opacity: 0.18 }}
+        transition={{ duration: 1.5, delay: 0.7 }}
+      />
+
+      {/* Cercle cible petit bas droite */}
+      <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 1, delay: 1.2 }}>
+        <circle cx="1360" cy="680" r="60" fill="none" stroke="hsl(152,28%,50%)" strokeWidth="0.9" opacity="0.32" />
+        <circle cx="1360" cy="680" r="38" fill="none" stroke="hsl(152,28%,50%)" strokeWidth="0.9" opacity="0.32" />
+        <circle cx="1360" cy="680" r="18" fill="none" stroke="hsl(152,28%,50%)" strokeWidth="0.9" opacity="0.32" />
+        <circle cx="1360" cy="680" r="5"  fill="hsl(152,28%,50%)"               opacity="0.28" />
+        <line x1="1360" y1="612" x2="1360" y2="634" stroke="hsl(152,28%,50%)" strokeWidth="0.9" opacity="0.36" />
+        <line x1="1360" y1="726" x2="1360" y2="748" stroke="hsl(152,28%,50%)" strokeWidth="0.9" opacity="0.36" />
+        <line x1="1292" y1="680" x2="1314" y2="680" stroke="hsl(152,28%,50%)" strokeWidth="0.9" opacity="0.36" />
+        <line x1="1406" y1="680" x2="1428" y2="680" stroke="hsl(152,28%,50%)" strokeWidth="0.9" opacity="0.36" />
+      </motion.g>
+    </svg>
+  );
+};
+
 const FloatingCross = () => (
   <motion.div
     className="absolute pointer-events-none z-10"
     style={{ top: "80px", right: "48px" }}
     initial={{ opacity: 0, scale: 0.5 }}
-    animate={{
-      opacity: 0.55,
-      scale: 1,
-      y: [0, -14, 0],
-    }}
+    animate={{ opacity: 0.6, scale: 1, y: [0, -14, 0] }}
     transition={{
       opacity: { duration: 0.8, delay: 1 },
       scale:   { duration: 0.8, delay: 1 },
-      y: {
-        duration: 3.5,
-        repeat: Infinity,
-        ease: "easeInOut",
-        delay: 1.2,
-      },
+      y: { duration: 3.5, repeat: Infinity, ease: "easeInOut", delay: 1.2 },
     }}
   >
     <svg width="88" height="88" viewBox="0 0 88 88" xmlns="http://www.w3.org/2000/svg">
-      {/* barre verticale */}
-      <rect x="33" y="0"  width="22" height="88" rx="6" fill="hsl(152,32%,56%)" />
-      {/* barre horizontale */}
-      <rect x="0"  y="33" width="88" height="22" rx="6" fill="hsl(152,32%,56%)" />
+      <rect x="33" y="0"  width="22" height="88" rx="6" fill="hsl(152,32%,50%)" />
+      <rect x="0"  y="33" width="88" height="22" rx="6" fill="hsl(152,32%,50%)" />
     </svg>
   </motion.div>
 );
@@ -201,14 +169,13 @@ const HeroSection = () => {
       ];
 
   const line2Gradient = theme === "light"
-    ? "linear-gradient(90deg, hsl(40,65%,35%) 0%, hsl(45,70%,38%) 40%, hsl(50,65%,34%) 100%)"
+    ? "linear-gradient(90deg, hsl(40,65%,30%) 0%, hsl(45,70%,33%) 40%, hsl(50,65%,29%) 100%)"
     : "linear-gradient(90deg, hsl(217,70%,80%) 0%, hsl(217,91%,65%) 35%, hsl(43,95%,58%) 70%, hsl(47,100%,62%) 100%)";
 
   return (
     <section className="relative min-h-screen flex items-center overflow-hidden pt-16">
       <div className="absolute inset-0 z-0">
 
-        {/* Dark mode: brain photo */}
         <img
           src={brainBg}
           alt=""
@@ -216,17 +183,15 @@ const HeroSection = () => {
           style={{ display: theme === "light" ? "none" : "block" }}
         />
 
-        {/* Light mode */}
         {theme === "light" && (
           <>
             <div className="absolute inset-0" style={{
-              background: "linear-gradient(180deg, hsl(45,30%,93%) 0%, hsl(60,18%,92%) 20%, hsl(100,16%,91%) 45%, hsl(140,20%,89%) 70%, hsl(152,24%,87%) 100%)"
+              background: "linear-gradient(180deg, hsl(42,28%,89%) 0%, hsl(58,16%,87%) 20%, hsl(98,14%,86%) 50%, hsl(138,18%,83%) 75%, hsl(152,22%,81%) 100%)"
             }} />
-            <MedicalDecorations />
+            <AnimatedECG />
           </>
         )}
 
-        {/* Dark mode overlays — intouchés */}
         {theme === "dark" && (
           <>
             <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/30 to-background" />
@@ -236,7 +201,6 @@ const HeroSection = () => {
         )}
       </div>
 
-      {/* Croix flottante — light mode uniquement */}
       {theme === "light" && <FloatingCross />}
 
       <div className="container mx-auto px-4 relative z-10">
@@ -261,7 +225,6 @@ const HeroSection = () => {
             {/* TITLE */}
             <h1 className="font-display text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold leading-tight mb-6">
 
-              {/* Ligne 1 */}
               <motion.div
                 className="flex flex-wrap justify-center gap-x-4 mb-3"
                 initial="hidden"
@@ -280,14 +243,13 @@ const HeroSection = () => {
                     }}
                     transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
                     className="inline-block"
-                    style={green && theme === "light" ? { color: "hsl(152,40%,28%)" } : undefined}
+                    style={green && theme === "light" ? { color: "hsl(152,42%,24%)" } : undefined}
                   >
                     {word}
                   </motion.span>
                 ))}
               </motion.div>
 
-              {/* Ligne 2 — doré/olive */}
               <motion.div
                 className="flex flex-wrap justify-center gap-x-3"
                 initial="hidden"
@@ -319,7 +281,6 @@ const HeroSection = () => {
               </motion.div>
             </h1>
 
-            {/* Subtitle */}
             <AnimatedParagraph
               text={lang === "fr"
                 ? "Téléversez des scans IRM et obtenez une analyse IA instantanée avec localisation tumorale, score de confiance et rapports médicaux personnalisés."
@@ -328,7 +289,6 @@ const HeroSection = () => {
               delay={1.1}
             />
 
-            {/* CTA buttons */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -349,7 +309,6 @@ const HeroSection = () => {
             </motion.div>
           </motion.div>
 
-          {/* Stats */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -372,7 +331,6 @@ const HeroSection = () => {
           </motion.div>
         </div>
 
-        {/* Pills */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -395,7 +353,6 @@ const HeroSection = () => {
         </motion.div>
       </div>
 
-      {/* Scroll indicator */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
