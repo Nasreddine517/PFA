@@ -18,8 +18,15 @@ from app.services.inference_service import (
 )
 
 
-def build_analysis_response(analysis_document: dict, scan_document: dict) -> AnalysisResponse:
-    bounding_box = analysis_document.get("bounding_box")
+def build_analysis_response(
+    analysis_document: dict,
+    scan_document: dict,
+    inference_result: dict | None = None,
+) -> AnalysisResponse:
+    bounding_box = None
+    if inference_result is not None:
+        bounding_box = inference_result.get("bounding_box")
+
     return AnalysisResponse(
         id=str(analysis_document["_id"]),
         scanId=str(scan_document["_id"]),
@@ -28,15 +35,13 @@ def build_analysis_response(analysis_document: dict, scan_document: dict) -> Ana
         imageUrl=scan_document.get("image_url"),
         result=analysis_document["result"],
         confidence=analysis_document["confidence"],
-        tumorDetected=analysis_document["tumor_detected"],
-        tumorType=analysis_document.get("tumor_type"),
-        tumorGrade=analysis_document.get("tumor_grade"),
-        tumorLocation=analysis_document.get("tumor_location"),
-        tumorSize=analysis_document.get("tumor_size"),
-        tumorVolume=analysis_document.get("tumor_volume"),
+        tumorDetected=inference_result.get("tumor_detected") if inference_result else None,
+        tumorType=inference_result.get("tumor_type") if inference_result else None,
+        tumorLocation=inference_result.get("tumor_location") if inference_result else None,
+        tumorVolume=inference_result.get("tumor_volume") if inference_result else None,
         boundingBox=BoundingBoxResponse(**bounding_box) if bounding_box else None,
-        reportText=analysis_document["report_text"],
-        modelVersion=analysis_document["model_version"],
+        reportText=inference_result.get("report_text") if inference_result else None,
+        modelVersion=inference_result.get("model_version") if inference_result else None,
         createdAt=analysis_document["created_at"],
     )
 
@@ -84,15 +89,6 @@ async def create_analysis(*, doctor_id: str, scan_id: str) -> AnalysisResponse:
         scan_id=scan_id,
         result=inference_result["result"],
         confidence=inference_result["confidence"],
-        tumor_detected=inference_result["tumor_detected"],
-        tumor_type=inference_result["tumor_type"],
-        tumor_grade=inference_result["tumor_grade"],
-        tumor_location=inference_result["tumor_location"],
-        tumor_size=inference_result["tumor_size"],
-        tumor_volume=inference_result["tumor_volume"],
-        bounding_box=inference_result.get("bounding_box"),
-        report_text=inference_result["report_text"],
-        model_version=inference_result["model_version"],
     )
     insert_result = await analyses_collection.insert_one(analysis_document)
     analysis_document["_id"] = insert_result.inserted_id
@@ -108,7 +104,11 @@ async def create_analysis(*, doctor_id: str, scan_id: str) -> AnalysisResponse:
         return_document=ReturnDocument.AFTER,
     )
 
-    return build_analysis_response(analysis_document, updated_scan_document or scan_document)
+    return build_analysis_response(
+        analysis_document,
+        updated_scan_document or scan_document,
+        inference_result,
+    )
 
 
 async def get_analysis(*, doctor_id: str, analysis_id: str) -> AnalysisResponse:

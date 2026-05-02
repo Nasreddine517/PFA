@@ -8,15 +8,6 @@ def build_analysis_document(
     scan_id: str,
     result: str,
     confidence: float,
-    tumor_detected: bool,
-    tumor_type: str | None,
-    tumor_grade: str | None,
-    tumor_location: str | None,
-    tumor_size: str | None,
-    tumor_volume: str | None,
-    bounding_box: dict[str, float] | None,
-    report_text: str,
-    model_version: str,
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     return {
@@ -24,15 +15,6 @@ def build_analysis_document(
         "scan_id": scan_id,
         "result": result,
         "confidence": confidence,
-        "tumor_detected": tumor_detected,
-        "tumor_type": tumor_type,
-        "tumor_grade": tumor_grade,
-        "tumor_location": tumor_location,
-        "tumor_size": tumor_size,
-        "tumor_volume": tumor_volume,
-        "bounding_box": bounding_box,
-        "report_text": report_text,
-        "model_version": model_version,
         "created_at": now,
         "updated_at": now,
     }
