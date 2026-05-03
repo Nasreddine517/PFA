@@ -75,6 +75,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const clearSession = () => {
     localStorage.removeItem(USER_STORAGE_KEY);
     localStorage.removeItem(TOKEN_STORAGE_KEY);
+    // Wipe all MRI images stored for this session so they are not accessible after logout
+    Object.keys(sessionStorage)
+      .filter((k) => k.startsWith("neuroscan_scan_image_"))
+      .forEach((k) => sessionStorage.removeItem(k));
+    sessionStorage.removeItem("neuroscan_latest_analysis_id");
     setUser(null);
     setSession(null);
   };

@@ -72,7 +72,8 @@ function normalizeImageUrl(imageUrl?: string | null): string | null | undefined 
     return imageUrl;
   }
 
-  if (/^https?:\/\//i.test(imageUrl)) {
+  // Data URIs and absolute URLs are used as-is
+  if (/^(https?:\/\/|data:)/i.test(imageUrl)) {
     return imageUrl;
   }
 

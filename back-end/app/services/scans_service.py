@@ -1,10 +1,12 @@
 from pathlib import Path
-from uuid import uuid4
+
+from pymongo import ReturnDocument
 
 from app.core.config import settings
 from app.database.mongodb import get_database, get_scan_collection_name
 from app.models.scan import build_scan_document
 from app.schemas.analysis import ScanUploadResponse
+from app.services.analyses_service import persist_analysis_for_scan
 
 
 ALLOWED_CONTENT_TYPES = {
@@ -57,26 +59,12 @@ def build_scan_upload_response(scan_document: dict) -> ScanUploadResponse:
 async def create_scan(*, doctor_id: str, file_name: str, file_type: str, file_bytes: bytes) -> ScanUploadResponse:
     validate_scan_file(file_name=file_name, file_type=file_type, file_bytes=file_bytes)
 
-    upload_dir = Path(settings.scan_upload_dir)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    extension = Path(file_name).suffix.lower()
-    stored_file_name = f"{uuid4().hex}{extension}"
-    stored_file_path = upload_dir / stored_file_name
-    stored_file_path.write_bytes(file_bytes)
-
-    relative_storage_path = stored_file_path.as_posix()
-    image_url = None
-    if extension in {".jpeg", ".jpg", ".png"}:
-        image_url = f"{settings.upload_mount_prefix}/scans/{stored_file_name}"
-
     scan_document = build_scan_document(
         doctor_id=doctor_id,
         file_name=file_name,
         file_type=file_type or "application/octet-stream",
         file_size=len(file_bytes),
-        storage_path=relative_storage_path,
-        image_url=image_url,
+        analysis_status="pending",
     )
 
     database = get_database()
@@ -84,4 +72,32 @@ async def create_scan(*, doctor_id: str, file_name: str, file_type: str, file_by
     insert_result = await scans_collection.insert_one(scan_document)
     scan_document["_id"] = insert_result.inserted_id
 
-    return build_scan_upload_response(scan_document)
+    try:
+        analysis_document = await persist_analysis_for_scan(
+            doctor_id=doctor_id,
+            scan_document=scan_document,
+            file_bytes=file_bytes,
+        )
+    except Exception:
+        await scans_collection.find_one_and_update(
+            {"_id": scan_document["_id"]},
+            {
+                "$set": {
+                    "analysis_status": "failed",
+                },
+            },
+        )
+        raise
+
+    updated_scan_document = await scans_collection.find_one_and_update(
+        {"_id": scan_document["_id"]},
+        {
+            "$set": {
+                "analysis_status": "completed",
+                "latest_analysis_id": str(analysis_document["_id"]),
+            },
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+
+    return build_scan_upload_response(updated_scan_document or scan_document)
