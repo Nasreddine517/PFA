@@ -17,8 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
-
-const SCANS_STORAGE_KEY = "neuroscan_scans";
+import { getDashboardStats } from "@/lib/analysisApi";
 
 const CHART_COLORS = {
   primary: "hsl(217, 91%, 60%)",
@@ -27,15 +26,21 @@ const CHART_COLORS = {
   muted: "hsl(215, 15%, 55%)",
 };
 
+interface DashboardScan {
+  id: string;
+  created_at: string;
+  result: string;
+  confidence: number;
+}
+
 const Dashboard = () => {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { t, lang } = useTheme();
-  const [scans, setScans] = useState<any[]>([]);
+  const [scans, setScans] = useState<DashboardScan[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState<"7d" | "30d" | "90d" | "6m" | "1y" | "custom">("6m");
   const [customFrom, setCustomFrom] = useState<Date | undefined>(undefined);
   const [customTo, setCustomTo] = useState<Date | undefined>(undefined);
-  const [stats, setStats] = useState({ totalScans: 0, detected: 0, cleared: 0, avgConfidence: 0 });
 
   const dateRangeInterval = useMemo(() => {
     const now = new Date();
@@ -57,28 +62,46 @@ const Dashboard = () => {
   }, [scans, dateRangeInterval]);
 
   useEffect(() => {
-    if (!user) return;
-    try {
-      const stored = localStorage.getItem(SCANS_STORAGE_KEY);
-      const allScans: any[] = stored ? JSON.parse(stored) : [];
-      const userScans = allScans.filter((s: any) => s.userId === user.id);
-      const mapped = userScans.map((s: any) => ({
-        id: s.id,
-        created_at: s.createdAt,
-        result: s.detected ? "positive" : "negative",
-        confidence: s.confidence,
-      }));
-      setScans(mapped);
-      const detected = mapped.filter((s) => s.result === "positive").length;
-      const cleared = mapped.filter((s) => s.result === "negative").length;
-      const avgConf = mapped.length ? mapped.reduce((acc, s) => acc + s.confidence, 0) / mapped.length : 0;
-      setStats({ totalScans: mapped.length, detected, cleared, avgConfidence: avgConf });
-    } catch { setScans([]); setStats({ totalScans: 0, detected: 0, cleared: 0, avgConfidence: 0 }); }
-    setLoading(false);
-  }, [user]);
+    if (!user || !session?.accessToken) {
+      setScans([]);
+      setLoading(false);
+      return;
+    }
 
-  const { totalScans, detected, cleared } = stats;
-  const avgConfidence = stats.avgConfidence.toFixed(1);
+    const loadDashboard = async () => {
+      try {
+        const dashboard = await getDashboardStats(session.accessToken);
+        setScans(
+          dashboard.analyses.map((analysis) => ({
+            id: analysis.id,
+            created_at: analysis.createdAt,
+            result: analysis.result,
+            confidence: analysis.confidence,
+          })),
+        );
+      } catch {
+        setScans([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void loadDashboard();
+  }, [session?.accessToken, user]);
+
+  const stats = useMemo(() => {
+    const totalScans = filteredScans.length;
+    const detected = filteredScans.filter((scan) => scan.result === "positive").length;
+    const cleared = filteredScans.filter((scan) => scan.result === "negative").length;
+    const avgConfidence = totalScans
+      ? filteredScans.reduce((acc, scan) => acc + scan.confidence, 0) / totalScans
+      : 0;
+
+    return { totalScans, detected, cleared, avgConfidence };
+  }, [filteredScans]);
+
+  const { totalScans, detected, cleared, avgConfidence } = stats;
+  const avgConfidenceLabel = avgConfidence.toFixed(1);
 
   const monthlyData = useMemo(() => {
     const months: Record<string, { month: string; total: number; positive: number; negative: number }> = {};
@@ -97,13 +120,14 @@ const Dashboard = () => {
     return Object.values(months);
   }, [filteredScans, dateRangeInterval, lang]);
 
-  const tumorDistribution = useMemo(() => {
-    const map: Record<string, number> = {};
-    filteredScans.filter((s) => s.tumor_type).forEach((s) => { map[s.tumor_type] = (map[s.tumor_type] || 0) + 1; });
-    return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [filteredScans]);
+  const resultDistribution = useMemo(() => {
+    const items = [
+      { name: lang === "fr" ? "Détectés" : "Detected", value: detected, color: CHART_COLORS.destructive },
+      { name: lang === "fr" ? "Négatifs" : "Cleared", value: cleared, color: CHART_COLORS.primary },
+    ];
 
-  const pieColors = [CHART_COLORS.primary, CHART_COLORS.accent, CHART_COLORS.destructive, "hsl(45, 90%, 55%)", "hsl(280, 60%, 55%)"];
+    return items.filter((item) => item.value > 0);
+  }, [filteredScans]);
 
   const confidenceData = useMemo(() => {
     const buckets = [
@@ -130,10 +154,10 @@ const Dashboard = () => {
   ];
 
   const statCards = [
-    { icon: Brain, label: t("dash.totalScans"), value: String(totalScans), change: "+12%", up: true },
+    { icon: Brain, label: t("dash.totalScans"), value: String(totalScans), change: `${scans.length} total`, up: true },
     { icon: AlertTriangle, label: t("dash.detected"), value: String(detected), change: `${totalScans ? Math.round((detected / totalScans) * 100) : 0}%`, up: detected > 0 },
     { icon: CheckCircle, label: t("dash.cleared"), value: String(cleared), change: `${totalScans ? Math.round((cleared / totalScans) * 100) : 0}%`, up: true },
-    { icon: Activity, label: t("dash.avgConf"), value: `${avgConfidence}%`, change: "AI Model", up: true },
+    { icon: Activity, label: t("dash.avgConf"), value: `${avgConfidenceLabel}%`, change: "AI Model", up: true },
   ];
 
   const quickActions = [
@@ -162,13 +186,13 @@ const Dashboard = () => {
     },
     {
       title: lang === "fr" ? "Précision de l'IA" : "AI Accuracy",
-      desc: `${lang === "fr" ? "Confiance moyenne de" : "Average confidence of"} ${avgConfidence}% ${lang === "fr" ? "sur toutes les analyses" : "across all analyses"}`,
+      desc: `${lang === "fr" ? "Confiance moyenne de" : "Average confidence of"} ${avgConfidenceLabel}% ${lang === "fr" ? "sur toutes les analyses" : "across all analyses"}`,
       icon: Activity, color: "text-primary",
     },
     {
-      title: lang === "fr" ? "Résultat le Plus Fréquent" : "Most Common Finding",
-      desc: tumorDistribution.length
-        ? `${tumorDistribution.sort((a, b) => b.value - a.value)[0].name} (${tumorDistribution[0].value} ${lang === "fr" ? "cas" : "cases"})`
+      title: lang === "fr" ? "Résultat le Plus Fréquent" : "Most Common Outcome",
+      desc: totalScans
+        ? `${detected >= cleared ? (lang === "fr" ? "Détecté" : "Detected") : (lang === "fr" ? "Négatif" : "Cleared")} (${Math.max(detected, cleared)} ${lang === "fr" ? "cas" : "cases"})`
         : (lang === "fr" ? "Aucun résultat pour l'instant" : "No findings yet"),
       icon: Brain, color: "text-accent",
     },
@@ -183,6 +207,12 @@ const Dashboard = () => {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
+      {loading && (
+        <div className="mb-6 rounded-xl bg-card border border-border p-4 text-sm text-muted-foreground">
+          {lang === "fr" ? "Chargement du dashboard..." : "Loading dashboard..."}
+        </div>
+      )}
+
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
@@ -327,14 +357,14 @@ const Dashboard = () => {
         >
           <div className="flex items-center gap-2 mb-4">
             <PieChartIcon className="w-5 h-5 text-accent" />
-            <h2 className="font-display text-lg font-semibold">{t("dash.tumorTypes")}</h2>
+            <h2 className="font-display text-lg font-semibold">{t("dash.resultsSplit")}</h2>
           </div>
-          {tumorDistribution.length > 0 ? (
+          {resultDistribution.length > 0 ? (
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={tumorDistribution} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="value" stroke="none">
-                    {tumorDistribution.map((_, i) => (<Cell key={i} fill={pieColors[i % pieColors.length]} />))}
+                  <Pie data={resultDistribution} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="value" stroke="none">
+                    {resultDistribution.map((entry) => (<Cell key={entry.name} fill={entry.color} />))}
                   </Pie>
                   <Tooltip {...chartTooltipStyle} />
                   <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: "12px", color: "hsl(215, 15%, 55%)" }} />
@@ -342,7 +372,7 @@ const Dashboard = () => {
               </ResponsiveContainer>
             </div>
           ) : (
-            <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">{t("dash.noTumorData")}</div>
+            <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">{t("dash.noResultsData")}</div>
           )}
         </motion.div>
       </div>

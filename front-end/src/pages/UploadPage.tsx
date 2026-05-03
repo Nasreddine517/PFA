@@ -268,6 +268,10 @@ const UploadPage = () => {
     try {
       const analysis = await uploadAndAnalyzeScan(session.accessToken, file);
       sessionStorage.setItem(LATEST_ANALYSIS_STORAGE_KEY, analysis.id);
+      // Store the image for this session only (cleared on logout / tab close)
+      if (preview) {
+        sessionStorage.setItem(`neuroscan_scan_image_${analysis.id}`, preview);
+      }
       await new Promise((resolve) => setTimeout(resolve, 1200));
       clearInterval(interval);
       setProgress(100);

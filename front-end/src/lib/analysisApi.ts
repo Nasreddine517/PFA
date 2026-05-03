@@ -20,11 +20,9 @@ export interface AnalysisResult {
   imageUrl?: string | null;
   result: string;
   confidence: number;
-  tumorDetected: boolean;
+  tumorDetected?: boolean | null;
   tumorType?: string | null;
-  tumorGrade?: string | null;
   tumorLocation?: string | null;
-  tumorSize?: string | null;
   tumorVolume?: string | null;
   boundingBox?: {
     x: number;
@@ -32,9 +30,24 @@ export interface AnalysisResult {
     width: number;
     height: number;
   } | null;
-  reportText: string;
-  modelVersion: string;
+  reportText?: string | null;
+  modelVersion?: string | null;
   createdAt: string;
+}
+
+export interface DashboardAnalysisSummary {
+  id: string;
+  result: string;
+  confidence: number;
+  createdAt: string;
+}
+
+export interface DashboardStats {
+  totalScans: number;
+  positiveScans: number;
+  negativeScans: number;
+  avgConfidence: number;
+  analyses: DashboardAnalysisSummary[];
 }
 
 async function apiRequest<T>(path: string, init: RequestInit): Promise<T> {
@@ -59,7 +72,8 @@ function normalizeImageUrl(imageUrl?: string | null): string | null | undefined 
     return imageUrl;
   }
 
-  if (/^https?:\/\//i.test(imageUrl)) {
+  // Data URIs and absolute URLs are used as-is
+  if (/^(https?:\/\/|data:)/i.test(imageUrl)) {
     return imageUrl;
   }
 
@@ -111,6 +125,13 @@ export async function createAnalysis(token: string, scanId: string): Promise<Ana
 
 export async function getAnalysisById(token: string, analysisId: string): Promise<AnalysisResult> {
   return apiRequest<AnalysisResult>(`/analyses/${analysisId}`, {
+    method: "GET",
+    headers: withAuth(token),
+  });
+}
+
+export async function getDashboardStats(token: string): Promise<DashboardStats> {
+  return apiRequest<DashboardStats>("/dashboard/stats", {
     method: "GET",
     headers: withAuth(token),
   });

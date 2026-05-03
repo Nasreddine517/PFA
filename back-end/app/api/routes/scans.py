@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from app.api.dependencies.auth import get_current_user_document
 from app.schemas.analysis import ScanUploadResponse
+from app.services.inference_service import InferenceInputError, ModelConfigurationError
 from app.services.scans_service import (
     InvalidScanFileError,
     ScanTooLargeError,
@@ -38,4 +39,14 @@ async def upload_scan(
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="Le fichier IRM depasse la taille maximale autorisee.",
+        ) from exc
+    except InferenceInputError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Le modele IA accepte actuellement uniquement des images PNG ou JPEG exploitables.",
+        ) from exc
+    except ModelConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Le modele IA n'est pas correctement configure sur le serveur.",
         ) from exc

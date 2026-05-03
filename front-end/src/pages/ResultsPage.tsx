@@ -86,7 +86,7 @@ const ResultsPage = () => {
           tumor_volume: analysis.tumorVolume || null,
           bounding_box: analysis.boundingBox || null,
           report_text: analysis.reportText,
-          image_url: analysis.imageUrl || null,
+          image_url: analysis.imageUrl || sessionStorage.getItem(`neuroscan_scan_image_${analysis.id}`) || null,
         });
       } catch (error) {
         console.error("Failed to load scan:", error);

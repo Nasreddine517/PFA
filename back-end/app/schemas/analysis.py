@@ -44,15 +44,13 @@ class AnalysisResponse(BaseModel):
     image_url: str | None = Field(None, alias="imageUrl")
     result: str
     confidence: float
-    tumor_detected: bool = Field(..., alias="tumorDetected")
+    tumor_detected: bool | None = Field(None, alias="tumorDetected")
     tumor_type: str | None = Field(None, alias="tumorType")
-    tumor_grade: str | None = Field(None, alias="tumorGrade")
     tumor_location: str | None = Field(None, alias="tumorLocation")
-    tumor_size: str | None = Field(None, alias="tumorSize")
     tumor_volume: str | None = Field(None, alias="tumorVolume")
     bounding_box: BoundingBoxResponse | None = Field(None, alias="boundingBox")
-    report_text: str = Field(..., alias="reportText")
-    model_version: str = Field(..., alias="modelVersion")
+    report_text: str | None = Field(None, alias="reportText")
+    model_version: str | None = Field(None, alias="modelVersion")
     created_at: datetime = Field(..., alias="createdAt")
 
     model_config = ConfigDict(populate_by_name=True)

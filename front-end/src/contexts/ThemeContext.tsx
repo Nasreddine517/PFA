@@ -41,6 +41,8 @@ const translations: Record<string, Record<string, string>> = {
   "dash.scansOverTime": { fr: "Scans dans le Temps", en: "Scans Over Time" },
   "dash.tumorTypes": { fr: "Types de Tumeurs", en: "Tumor Types" },
   "dash.noTumorData": { fr: "Aucune donnée de tumeur", en: "No tumor data yet" },
+  "dash.resultsSplit": { fr: "Répartition des Résultats", en: "Results Breakdown" },
+  "dash.noResultsData": { fr: "Aucune analyse disponible", en: "No analyses yet" },
   "dash.confDist": { fr: "Distribution de Confiance", en: "Confidence Distribution" },
   "dash.aiInsights": { fr: "Analyses IA", en: "AI Insights" },
   // Upload
@@ -90,7 +92,6 @@ const translations: Record<string, Record<string, string>> = {
   "res.tumorLocal": { fr: "Localisation Tumorale", en: "Tumor Localization" },
   "res.scanImage": { fr: "Image du Scan", en: "Scan Image" },
   "res.confidence": { fr: "Confiance", en: "Confidence" },
-  "res.tumorGrade": { fr: "Grade Tumoral", en: "Tumor Grade" },
   "res.location": { fr: "Localisation", en: "Location" },
   "res.volume": { fr: "Volume", en: "Volume" },
   "res.tumorRegion": { fr: "Zone Tumorale", en: "Tumor Region" },
