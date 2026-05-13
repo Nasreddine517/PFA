@@ -15,6 +15,7 @@ def build_analysis_document(
     bounding_box: dict[str, float] | None = None,
     report_text: str | None = None,
     model_version: str | None = None,
+    positive_slices: list[dict] | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     return {
@@ -29,6 +30,7 @@ def build_analysis_document(
         "bounding_box": bounding_box,
         "report_text": report_text,
         "model_version": model_version,
+        "positive_slices": positive_slices or [],
         "created_at": now,
         "updated_at": now,
     }

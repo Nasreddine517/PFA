@@ -36,6 +36,17 @@ class CreateAnalysisRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class PositiveSliceResponse(BaseModel):
+    image_data: str = Field(..., alias="imageData")
+    file_name: str = Field(..., alias="fileName")
+    confidence: float
+    tumor_type: str | None = Field(None, alias="tumorType")
+    tumor_location: str | None = Field(None, alias="tumorLocation")
+    bounding_box: BoundingBoxResponse | None = Field(None, alias="boundingBox")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class AnalysisResponse(BaseModel):
     id: str
     scan_id: str = Field(..., alias="scanId")
@@ -51,6 +62,7 @@ class AnalysisResponse(BaseModel):
     bounding_box: BoundingBoxResponse | None = Field(None, alias="boundingBox")
     report_text: str | None = Field(None, alias="reportText")
     model_version: str | None = Field(None, alias="modelVersion")
+    positive_slices: list[PositiveSliceResponse] = Field(default_factory=list, alias="positiveSlices")
     created_at: datetime = Field(..., alias="createdAt")
 
     model_config = ConfigDict(populate_by_name=True)

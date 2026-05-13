@@ -4,13 +4,13 @@ import { Link, useLocation, useParams } from "react-router-dom";
 import {
   AlertTriangle, CheckCircle, Download, Printer, ArrowLeft, Brain,
   Target, Activity, FileText, TrendingUp, Shield, Sparkles, Star,
-  MapPin, Layers, Calendar, Hash, Cpu, ChevronRight,
+  MapPin, Layers, Calendar, Hash, Cpu, ChevronRight, X, Eye,
 } from "lucide-react";
 import AnimatedButton from "@/components/AnimatedButton";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { getAnalysisById } from "@/lib/analysisApi";
+import { getAnalysisById, PositiveSlice } from "@/lib/analysisApi";
 import { generateMedicalReport } from "@/lib/generatePDF";
 
 const LATEST_ANALYSIS_STORAGE_KEY = "neuroscan_latest_analysis_id";
@@ -42,6 +42,7 @@ interface ScanResult {
   } | null;
   report_text: string | null;
   image_url: string | null;
+  positive_slices: PositiveSlice[];
 }
 
 const ResultsPage = () => {
@@ -53,6 +54,7 @@ const ResultsPage = () => {
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [showSlicesModal, setShowSlicesModal] = useState(false);
 
   useEffect(() => {
     if (!user || !session?.accessToken) {
@@ -87,6 +89,7 @@ const ResultsPage = () => {
           bounding_box: analysis.boundingBox || null,
           report_text: analysis.reportText,
           image_url: analysis.imageUrl || sessionStorage.getItem(`neuroscan_scan_image_${analysis.id}`) || null,
+          positive_slices: analysis.positiveSlices || [],
         });
       } catch (error) {
         console.error("Failed to load scan:", error);
@@ -539,6 +542,22 @@ const handleDownloadPDF = () => {
                 {lang === "fr" ? "Nouveau Scan" : "New Scan"} <ChevronRight className="w-4 h-4" />
               </motion.button>
             </Link>
+            {isPositive && scan.positive_slices.length > 0 && (
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowSlicesModal(true)}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold border"
+                style={{
+                  background: "rgba(239,68,68,0.1)",
+                  color: "#f87171",
+                  borderColor: "rgba(239,68,68,0.35)",
+                  boxShadow: "0 4px 16px rgba(239,68,68,0.15)",
+                }}
+              >
+                <Eye className="w-4 h-4" /> {t("res.positiveSlices")}
+              </motion.button>
+            )}
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -551,6 +570,152 @@ const handleDownloadPDF = () => {
           </div>
         </motion.div>
       </div>
+
+      {/* ── Positive Slices Modal ── */}
+      <AnimatePresence>
+        {showSlicesModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
+            onClick={() => setShowSlicesModal(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: "spring", stiffness: 200, damping: 22 }}
+              className="relative w-full max-w-4xl max-h-[90vh] rounded-2xl overflow-hidden flex flex-col"
+              style={{
+                background: "linear-gradient(135deg, hsl(var(--background)), rgba(239,68,68,0.05))",
+                border: "1px solid rgba(239,68,68,0.3)",
+                boxShadow: "0 24px 80px rgba(0,0,0,0.5), 0 0 40px rgba(239,68,68,0.1)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal header */}
+              <div
+                className="flex items-center justify-between px-6 py-5 border-b flex-shrink-0"
+                style={{ borderColor: "rgba(239,68,68,0.2)" }}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center"
+                    style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)" }}
+                  >
+                    <Layers className="w-5 h-5 text-red-400" />
+                  </div>
+                  <div>
+                    <h2 className="font-display text-lg font-bold" style={{ color: "#f87171" }}>
+                      {t("res.positiveSlicesTitle")}
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {scan.positive_slices.length} {lang === "fr" ? "coupe(s) détectée(s)" : "slice(s) detected"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowSlicesModal(false)}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Description */}
+              <div className="px-6 py-3 flex-shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                <p className="text-xs text-muted-foreground">{t("res.positiveSlicesDesc")}</p>
+              </div>
+
+              {/* Slices grid */}
+              <div className="overflow-y-auto flex-1 p-6">
+                {scan.positive_slices.length === 0 ? (
+                  <p className="text-center text-muted-foreground text-sm py-12">{t("res.noPositiveSlices")}</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {scan.positive_slices.map((slice, idx) => {
+                      const sliceBox = slice.boundingBox
+                        ? {
+                            left: `${slice.boundingBox.x * 100}%`,
+                            top: `${slice.boundingBox.y * 100}%`,
+                            width: `${slice.boundingBox.width * 100}%`,
+                            height: `${slice.boundingBox.height * 100}%`,
+                          }
+                        : null;
+                      return (
+                        <motion.div
+                          key={idx}
+                          initial={{ opacity: 0, y: 16 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: idx * 0.06 }}
+                          className="rounded-xl overflow-hidden"
+                          style={{
+                            background: "rgba(239,68,68,0.05)",
+                            border: "1px solid rgba(239,68,68,0.2)",
+                            boxShadow: "0 4px 16px rgba(239,68,68,0.08)",
+                          }}
+                        >
+                          {/* Image */}
+                          <div className="relative">
+                            <img
+                              src={slice.imageData}
+                              alt={`${t("res.sliceOf")} ${idx + 1}`}
+                              className="w-full object-cover"
+                              style={{ maxHeight: "200px", objectFit: "contain", background: "#0a0a0a" }}
+                            />
+                            {sliceBox && (
+                              <div className="absolute" style={sliceBox}>
+                                <div
+                                  className="absolute inset-0 rounded-lg border-2 border-red-400"
+                                  style={{ boxShadow: "0 0 12px rgba(239,68,68,0.5)" }}
+                                />
+                              </div>
+                            )}
+                            <div
+                              className="absolute top-2 right-2 text-xs font-bold px-2 py-0.5 rounded-lg"
+                              style={{ background: "rgba(239,68,68,0.85)", color: "white" }}
+                            >
+                              {slice.confidence.toFixed(1)}%
+                            </div>
+                            <div
+                              className="absolute top-2 left-2 text-xs font-mono px-2 py-0.5 rounded-lg"
+                              style={{ background: "rgba(0,0,0,0.65)", color: "rgba(255,255,255,0.7)" }}
+                            >
+                              #{idx + 1}
+                            </div>
+                          </div>
+
+                          {/* Slice meta */}
+                          <div className="px-3 py-2.5 space-y-1.5">
+                            {slice.tumorType && (
+                              <div className="flex items-center gap-1.5">
+                                <AlertTriangle className="w-3 h-3 text-red-400 flex-shrink-0" />
+                                <span className="text-xs font-semibold text-red-300 capitalize">{slice.tumorType}</span>
+                              </div>
+                            )}
+                            {slice.tumorLocation && (
+                              <div className="flex items-center gap-1.5">
+                                <MapPin className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                                <span className="text-xs text-muted-foreground capitalize">{slice.tumorLocation}</span>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1.5">
+                              <FileText className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                              <span className="text-xs text-muted-foreground font-mono truncate">{slice.fileName}</span>
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

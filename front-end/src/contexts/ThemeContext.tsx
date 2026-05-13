@@ -104,6 +104,11 @@ const translations: Record<string, Record<string, string>> = {
   "res.aiDisclaimer": { fr: "⚠️ Ce rapport est généré par IA et constitue un outil d'aide à la décision clinique. Il ne doit pas être utilisé comme seul critère de diagnostic ou de traitement.", en: "⚠️ This report is AI-generated and intended as a clinical decision support tool. It should not be used as the sole basis for diagnosis or treatment planning." },
   "res.scanNotFound": { fr: "Scan introuvable", en: "Scan not found" },
   "res.uploadNew": { fr: "Téléverser un Nouveau Scan", en: "Upload New Scan" },
+  "res.positiveSlices": { fr: "Couches d'intérêt", en: "Slices of Interest" },
+  "res.positiveSlicesTitle": { fr: "Couches avec détection de tumeur", en: "Slices with Tumor Detection" },
+  "res.positiveSlicesDesc": { fr: "Toutes les images de la série où une tumeur a été détectée, triées par confiance décroissante.", en: "All images in the series where a tumor was detected, sorted by descending confidence." },
+  "res.sliceOf": { fr: "Coupe", en: "Slice" },
+  "res.noPositiveSlices": { fr: "Aucune coupe individuelle disponible.", en: "No individual slices available." },
   // Auth
   "auth.signin": { fr: "Connexion", en: "Sign In" },
   "auth.signup": { fr: "Créer un compte", en: "Sign Up" },

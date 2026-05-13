@@ -6,7 +6,9 @@ from app.services.inference_service import InferenceInputError, ModelConfigurati
 from app.services.scans_service import (
     InvalidScanFileError,
     ScanTooLargeError,
+    SeriesTooManyFilesError,
     create_scan,
+    create_scan_series,
 )
 
 router = APIRouter()
@@ -44,6 +46,62 @@ async def upload_scan(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Le modele IA accepte actuellement uniquement des images PNG ou JPEG exploitables.",
+        ) from exc
+    except ModelConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Le modele IA n'est pas correctement configure sur le serveur.",
+        ) from exc
+
+
+@router.post(
+    "/upload-series",
+    response_model=ScanUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload a DICOM series (multiple slices at once)",
+)
+async def upload_scan_series(
+    files: list[UploadFile] = File(...),
+    current_user_document: dict = Depends(get_current_user_document),
+) -> ScanUploadResponse:
+    if not files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Aucun fichier fourni.",
+        )
+    try:
+        file_tuples: list[tuple[bytes, str, str]] = []
+        for upload_file in files:
+            file_bytes = await upload_file.read()
+            file_tuples.append((
+                file_bytes,
+                upload_file.filename or "slice.dcm",
+                upload_file.content_type or "application/dicom",
+            ))
+
+        return await create_scan_series(
+            doctor_id=str(current_user_document["_id"]),
+            files=file_tuples,
+        )
+    except SeriesTooManyFilesError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"La serie contient trop de fichiers (maximum {500} slices).",
+        ) from exc
+    except InvalidScanFileError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La serie doit contenir des images DICOM (.dcm), PNG ou JPEG.",
+        ) from exc
+    except ScanTooLargeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="La serie DICOM depasse la taille maximale autorisee.",
+        ) from exc
+    except InferenceInputError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Le modele IA n'a pas pu traiter la serie DICOM.",
         ) from exc
     except ModelConfigurationError as exc:
         raise HTTPException(
