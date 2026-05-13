@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Upload, Brain, FileImage, X, User, Calendar, Hash,
   Sparkles, CheckCircle2, Shield, Zap, Activity, Cpu,
-  ArrowRight, Scan, ChevronRight, AlertTriangle,
+  ArrowRight, Scan, ChevronRight, AlertTriangle, FolderOpen,
 } from "lucide-react";
 import { DayPicker } from "react-day-picker";
 import { format } from "date-fns";
@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { uploadAndAnalyzeScan } from "@/lib/analysisApi";
+import { uploadAndAnalyzeScan, uploadAndAnalyzeScanSeries } from "@/lib/analysisApi";
 import { toast } from "sonner";
 
 const LATEST_ANALYSIS_STORAGE_KEY = "neuroscan_latest_analysis_id";
@@ -77,6 +77,8 @@ const UploadPage = () => {
   const [progress, setProgress] = useState(0);
   const [activeStep, setActiveStep] = useState(0);
   const [hoveredSymptom, setHoveredSymptom] = useState<string | null>(null);
+  const [uploadMode, setUploadMode] = useState<"single" | "series">("single");
+  const [dicomSeries, setDicomSeries] = useState<File[] | null>(null);
 
   // CSS calendrier — adapté light/dark
   const CALENDAR_CSS = isLight ? `
@@ -228,18 +230,28 @@ const UploadPage = () => {
     return () => clearInterval(interval);
   }, [isAnalyzing]);
 
+  const isDicom = (f: File) =>
+    f.name.toLowerCase().endsWith(".dcm") ||
+    f.name.toLowerCase().endsWith(".dicom") ||
+    f.type === "application/dicom" ||
+    f.type === "application/dicom+json";
+
   const handleFile = useCallback((f: File) => {
     setFile(f);
-    const reader = new FileReader();
-    reader.onload = (e) => setPreview(e.target?.result as string);
-    reader.readAsDataURL(f);
+    if (isDicom(f)) {
+      setPreview("__dicom__");
+    } else {
+      const reader = new FileReader();
+      reader.onload = (e) => setPreview(e.target?.result as string);
+      reader.readAsDataURL(f);
+    }
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     const f = e.dataTransfer.files[0];
-    if (f && f.type.startsWith("image/")) handleFile(f);
+    if (f && (f.type.startsWith("image/") || isDicom(f))) handleFile(f);
   }, [handleFile]);
 
   const toggleSymptom = (label: string) => {
@@ -249,7 +261,10 @@ const UploadPage = () => {
   };
 
   const handleAnalyze = async () => {
-    if (!file || !user || !patientName || !session?.accessToken) {
+    const hasInput = uploadMode === "series"
+      ? !!(dicomSeries && dicomSeries.length > 0)
+      : !!file;
+    if (!hasInput || !user || !patientName || !session?.accessToken) {
       toast.error(lang === "fr" ? "Veuillez renseigner le nom du patient et téléverser un scan." : "Please fill in patient name and upload a scan.");
       return;
     }
@@ -266,11 +281,25 @@ const UploadPage = () => {
     }, 400);
 
     try {
-      const analysis = await uploadAndAnalyzeScan(session.accessToken, file);
+      const analysis = uploadMode === "series"
+        ? await uploadAndAnalyzeScanSeries(session.accessToken, dicomSeries!)
+        : await uploadAndAnalyzeScan(session.accessToken, file!);
       sessionStorage.setItem(LATEST_ANALYSIS_STORAGE_KEY, analysis.id);
-      // Store the image for this session only (cleared on logout / tab close)
-      if (preview) {
+
+      if (uploadMode === "single" && preview && preview !== "__dicom__") {
+        // PNG/JPG — preview is already a data URL
         sessionStorage.setItem(`neuroscan_scan_image_${analysis.id}`, preview);
+      } else if (uploadMode === "series" && dicomSeries) {
+        // Series — find the first PNG/JPG file and read it as a data URL
+        const firstImage = dicomSeries.find((f) => f.type.startsWith("image/"));
+        if (firstImage) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const dataUrl = e.target?.result as string;
+            if (dataUrl) sessionStorage.setItem(`neuroscan_scan_image_${analysis.id}`, dataUrl);
+          };
+          reader.readAsDataURL(firstImage);
+        }
       }
       await new Promise((resolve) => setTimeout(resolve, 1200));
       clearInterval(interval);
@@ -815,6 +844,99 @@ const UploadPage = () => {
                         <p className="text-sm text-muted-foreground">{t("up.dropScan")}</p>
                       </div>
                     </div>
+
+                    {/* Mode toggle */}
+                    <div className="flex rounded-xl overflow-hidden border border-primary/20">
+                      <button
+                        onClick={() => { setUploadMode("single"); setDicomSeries(null); }}
+                        className={`flex-1 px-4 py-2.5 text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${uploadMode === "single" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}
+                      >
+                        <FileImage className="w-4 h-4" />
+                        {lang === "fr" ? "Image unique" : "Single image"}
+                      </button>
+                      <button
+                        onClick={() => { setUploadMode("series"); setFile(null); setPreview(null); }}
+                        className={`flex-1 px-4 py-2.5 text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${uploadMode === "series" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}
+                      >
+                        <FolderOpen className="w-4 h-4" />
+                        {lang === "fr" ? "Plusieurs images" : "Multiple images"}
+                      </button>
+                    </div>
+
+                    {uploadMode === "series" ? (
+                      /* ── Series picker ── */
+                      <div>
+                        {dicomSeries && dicomSeries.length > 0 ? (
+                          <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: "spring" }} className="relative">
+                            <div className="w-full flex flex-col items-center justify-center py-10 gap-3 rounded-xl bg-gradient-to-br from-primary/5 to-accent/5 border border-primary/20">
+                              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/15 to-accent/15 border border-primary/30 flex items-center justify-center shadow-lg">
+                                <FolderOpen className="w-10 h-10 text-primary" />
+                              </div>
+                              <p className="text-sm font-medium text-foreground">
+                                {lang === "fr" ? `${dicomSeries.length} image(s) sélectionnée(s)` : `${dicomSeries.length} image(s) selected`}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {lang === "fr" ? "Série prête pour l'analyse IA image par image" : "Series ready for AI analysis (image by image)"}
+                              </p>
+                            </div>
+                            <motion.button
+                              whileHover={{ scale: 1.1, rotate: 90 }}
+                              whileTap={{ scale: 0.9 }}
+                              onClick={() => setDicomSeries(null)}
+                              className="absolute top-3 right-3 w-9 h-9 bg-background/90 backdrop-blur-md rounded-full flex items-center justify-center text-foreground hover:bg-destructive hover:text-destructive-foreground transition-colors shadow-lg"
+                            >
+                              <X className="w-4 h-4" />
+                            </motion.button>
+                          </motion.div>
+                        ) : (
+                          <div
+                            className="relative rounded-2xl border-2 border-dashed border-primary/40 hover:border-primary/70 p-14 text-center transition-all duration-300"
+                            style={{ background: "linear-gradient(135deg, rgba(59,130,246,0.04), rgba(245,158,11,0.04))" }}
+                          >
+                            <motion.div animate={{ y: [0, -12, 0] }} transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }} className="w-24 h-24 rounded-2xl bg-gradient-to-br from-primary/15 to-accent/15 border border-primary/30 flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(59,130,246,0.2)]">
+                              <FolderOpen className="w-12 h-12 text-primary" />
+                            </motion.div>
+                            <h3 className="font-display text-xl font-semibold mb-2">
+                              {lang === "fr"
+                                ? <><span className="text-accent">Série d'images</span></>
+                                : <><span className="text-accent">Image Series</span></>}
+                            </h3>
+                            <p className="text-sm text-muted-foreground mb-6">
+                              {lang === "fr"
+                                ? "Sélectionnez plusieurs images (PNG, JPG ou DICOM) — l'IA les analyse une par une"
+                                : "Select multiple images (PNG, JPG or DICOM) — AI analyzes each one"}
+                            </p>
+                            <label>
+                              <input
+                                type="file"
+                                multiple
+                                accept="image/*,.dcm,.dicom,application/dicom"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const fileList = e.target.files;
+                                  if (fileList && fileList.length > 0) {
+                                    const validFiles = Array.from(fileList).filter(
+                                      (f) =>
+                                        f.type.startsWith("image/") ||
+                                        f.name.toLowerCase().endsWith(".dcm") ||
+                                        f.name.toLowerCase().endsWith(".dicom")
+                                    );
+                                    if (validFiles.length > 0) setDicomSeries(validFiles);
+                                  }
+                                }}
+                              />
+                              <Button variant="outline" asChild className="gap-2 border-primary/40 hover:border-primary/70 hover:bg-primary/5 transition-all duration-300 h-11 px-6">
+                                <span className="cursor-pointer">
+                                  <FolderOpen className="w-4 h-4" />
+                                  {lang === "fr" ? "Sélectionner les images" : "Select images"}
+                                </span>
+                              </Button>
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* ── Single file picker (original) ── */
                     <motion.div
                       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                       onDragLeave={() => setIsDragging(false)}
@@ -826,9 +948,21 @@ const UploadPage = () => {
                       {preview ? (
                         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ type: "spring" }} className="relative">
                           <div className="relative rounded-xl overflow-hidden group">
-                            <motion.img src={preview} alt="MRI Preview" className="w-full max-h-[320px] object-contain rounded-xl" />
-                            <motion.div className="absolute inset-0 bg-gradient-to-b from-primary/10 via-transparent to-accent/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                            <motion.div className="absolute left-0 right-0 h-0.5 bg-accent/40" animate={{ top: ["0%", "100%", "0%"] }} transition={{ duration: 3, repeat: Infinity, ease: "linear" }} />
+                            {preview === "__dicom__" ? (
+                              <div className="w-full flex flex-col items-center justify-center py-10 gap-3 rounded-xl bg-gradient-to-br from-primary/5 to-accent/5 border border-primary/20">
+                                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/15 to-accent/15 border border-primary/30 flex items-center justify-center shadow-lg">
+                                  <Scan className="w-10 h-10 text-primary" />
+                                </div>
+                                <p className="text-sm font-medium text-foreground">{lang === "fr" ? "Fichier DICOM chargé" : "DICOM File Loaded"}</p>
+                                <p className="text-xs text-muted-foreground">{lang === "fr" ? "Aperçu non disponible pour les fichiers DICOM" : "Preview not available for DICOM files"}</p>
+                              </div>
+                            ) : (
+                              <>
+                                <motion.img src={preview!} alt="MRI Preview" className="w-full max-h-[320px] object-contain rounded-xl" />
+                                <motion.div className="absolute inset-0 bg-gradient-to-b from-primary/10 via-transparent to-accent/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                                <motion.div className="absolute left-0 right-0 h-0.5 bg-accent/40" animate={{ top: ["0%", "100%", "0%"] }} transition={{ duration: 3, repeat: Infinity, ease: "linear" }} />
+                              </>
+                            )}
                           </div>
                           <motion.button whileHover={{ scale: 1.1, rotate: 90 }} whileTap={{ scale: 0.9 }} onClick={() => { setFile(null); setPreview(null); }} className="absolute top-6 right-6 w-9 h-9 bg-background/90 backdrop-blur-md rounded-full flex items-center justify-center text-foreground hover:bg-destructive hover:text-destructive-foreground transition-colors shadow-lg">
                             <X className="w-4 h-4" />
@@ -854,7 +988,7 @@ const UploadPage = () => {
                           </h3>
                           <p className="text-sm text-muted-foreground mb-6">{t("up.formats")}</p>
                           <label>
-                            <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+                            <input type="file" accept="image/*,.dcm,.dicom,application/dicom" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
                             <Button variant="outline" asChild className="gap-2 border-primary/40 hover:border-primary/70 hover:bg-primary/5 transition-all duration-300 h-11 px-6">
                               <span className="cursor-pointer"><FileImage className="w-4 h-4" /> {t("up.browse")}</span>
                             </Button>
@@ -862,9 +996,10 @@ const UploadPage = () => {
                         </div>
                       )}
                     </motion.div>
+                    )} {/* end uploadMode conditional */}
                     <div className="flex items-center justify-between pt-2 border-t border-border">
                       <button onClick={() => setStep(2)} className="text-sm text-muted-foreground hover:text-foreground transition-colors">{t("up.back")}</button>
-                      {file && (
+                      {(uploadMode === "single" ? !!file : !!(dicomSeries && dicomSeries.length > 0)) && (
                         <motion.button initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} onClick={handleAnalyze} whileHover={{ scale: 1.05, boxShadow: "0 0 50px rgba(59,130,246,0.3)" }} whileTap={{ scale: 0.95 }} className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm text-primary-foreground" style={{ backgroundImage: "linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)))" }}>
                           <motion.div animate={{ rotate: [0, 360] }} transition={{ duration: 3, repeat: Infinity, ease: "linear" }}><Sparkles className="w-4 h-4" /></motion.div>
                           {t("up.startAnalysis")} <ArrowRight className="w-4 h-4" />

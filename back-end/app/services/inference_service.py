@@ -1,3 +1,4 @@
+import base64
 import hashlib
 from dataclasses import dataclass
 from functools import lru_cache
@@ -183,6 +184,62 @@ def normalize_dicom_pixels(dataset) -> np.ndarray:
     return pixel_array
 
 
+def _normalize_frame(raw_frame: np.ndarray, *, rescale_slope: float, rescale_intercept: float, monochrome1: bool) -> np.ndarray:
+    arr = raw_frame.astype(np.float32)
+    arr = arr * rescale_slope + rescale_intercept
+    mn, mx = float(arr.min()), float(arr.max())
+    if mx > mn:
+        arr = (arr - mn) / (mx - mn)
+        if monochrome1:
+            arr = 1.0 - arr
+    else:
+        arr = np.zeros_like(arr)
+    arr = np.clip(arr * 255, 0, 255).astype(np.uint8)
+    if arr.ndim == 3 and arr.shape[-1] == 1:
+        arr = arr[:, :, 0]
+    if arr.ndim == 3 and arr.shape[-1] > 3:
+        arr = arr[:, :, :3]
+    return arr
+
+
+def extract_all_dicom_frames(dataset) -> list[np.ndarray]:
+    """Return all slices of a DICOM dataset as a list of normalized uint8 arrays."""
+    try:
+        pixel_array = dataset.pixel_array
+    except Exception as exc:  # pragma: no cover
+        raise InferenceInputError(
+            "The DICOM image could not be decoded into pixel data.",
+        ) from exc
+
+    rescale_slope = parse_positive_float(getattr(dataset, "RescaleSlope", 1)) or 1.0
+    rescale_intercept = float(getattr(dataset, "RescaleIntercept", 0) or 0)
+    monochrome1 = str(getattr(dataset, "PhotometricInterpretation", "")).upper() == "MONOCHROME1"
+
+    # Determine raw frames list
+    if pixel_array.ndim == 2:
+        raw_frames = [pixel_array]
+    elif pixel_array.ndim == 3:
+        if pixel_array.shape[-1] in {3, 4}:
+            # (H, W, C) — single RGB/RGBA frame
+            raw_frames = [pixel_array]
+        elif pixel_array.shape[0] in {3, 4} and pixel_array.shape[-1] not in {3, 4}:
+            # (C, H, W) — single frame stored channel-first
+            raw_frames = [np.transpose(pixel_array, (1, 2, 0))]
+        else:
+            # (N, H, W) — multi-frame grayscale
+            raw_frames = [pixel_array[i] for i in range(pixel_array.shape[0])]
+    elif pixel_array.ndim == 4:
+        # (N, H, W, C) — multi-frame colour
+        raw_frames = [pixel_array[i] for i in range(pixel_array.shape[0])]
+    else:
+        raw_frames = [pixel_array[0]]
+
+    return [
+        _normalize_frame(f, rescale_slope=rescale_slope, rescale_intercept=rescale_intercept, monochrome1=monochrome1)
+        for f in raw_frames
+    ]
+
+
 def write_temp_input_file(*, suffix: str, file_bytes: bytes) -> str:
     with NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
         temp_file.write(file_bytes)
@@ -203,17 +260,27 @@ def build_dicom_temp_image(file_bytes: bytes) -> tuple[str, PhysicalScale | None
         return temp_file.name, extract_physical_scale(dataset)
 
 
-def prepare_inference_source(*, file_bytes: bytes, file_name: str) -> tuple[str, PhysicalScale | None]:
-    suffix = Path(file_name).suffix.lower()
-    if suffix in {".jpeg", ".jpg", ".png"}:
-        return write_temp_input_file(suffix=suffix, file_bytes=file_bytes), None
+def build_dicom_temp_images(file_bytes: bytes) -> tuple[list[str], PhysicalScale | None]:
+    """Convert every slice of a (possibly multi-frame) DICOM into a temp PNG.
 
-    if suffix in {".dcm", ".dicom"}:
-        return build_dicom_temp_image(file_bytes)
+    Returns a list of temp file paths and the shared physical scale.
+    """
+    try:
+        dataset = dcmread(BytesIO(file_bytes))
+    except InvalidDicomError as exc:
+        raise InferenceInputError("The uploaded DICOM file is invalid.") from exc
 
-    raise InferenceInputError(
-        "The current YOLO pipeline only supports DICOM, PNG, and JPEG MRI images.",
-    )
+    frames = extract_all_dicom_frames(dataset)
+    physical_scale = extract_physical_scale(dataset)
+
+    temp_paths: list[str] = []
+    for frame_array in frames:
+        image_mode = "L" if frame_array.ndim == 2 else "RGB"
+        with NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            Image.fromarray(frame_array, mode=image_mode).save(tmp, format="PNG")
+            temp_paths.append(tmp.name)
+
+    return temp_paths, physical_scale
 
 
 def format_cross_section_area(area_mm2: float) -> str:
@@ -332,27 +399,52 @@ def build_classification_response(result, file_name: str) -> dict:
 
 def run_yolo_inference(*, file_bytes: bytes, file_name: str) -> dict:
     model = get_yolo_model()
-    temp_path, physical_scale = prepare_inference_source(
-        file_bytes=file_bytes,
-        file_name=file_name,
-    )
-    try:
-        results = model.predict(
-            source=temp_path,
-            conf=settings.model_confidence_threshold,
-            verbose=False,
-        )
-    finally:
-        Path(temp_path).unlink(missing_ok=True)
+    suffix = Path(file_name).suffix.lower()
 
-    if not results:
+    if suffix in {".dcm", ".dicom"}:
+        temp_paths, physical_scale = build_dicom_temp_images(file_bytes)
+    elif suffix in {".jpeg", ".jpg", ".png"}:
+        temp_paths = [write_temp_input_file(suffix=suffix, file_bytes=file_bytes)]
+        physical_scale = None
+    else:
+        raise InferenceInputError(
+            "The current YOLO pipeline only supports DICOM, PNG, and JPEG MRI images.",
+        )
+
+    best_result: dict | None = None
+
+    for temp_path in temp_paths:
+        try:
+            results = model.predict(
+                source=temp_path,
+                conf=settings.model_confidence_threshold,
+                verbose=False,
+            )
+        finally:
+            Path(temp_path).unlink(missing_ok=True)
+
+        if not results:
+            continue
+
+        first_result = results[0]
+        if getattr(first_result, "probs", None) is not None:
+            candidate = build_classification_response(first_result, file_name)
+        else:
+            candidate = build_detection_response(first_result, file_name, physical_scale)
+
+        if best_result is None:
+            best_result = candidate
+        elif candidate["tumor_detected"] and not best_result["tumor_detected"]:
+            # Prefer any positive finding over a negative one
+            best_result = candidate
+        elif candidate["tumor_detected"] and best_result["tumor_detected"] and candidate["confidence"] > best_result["confidence"]:
+            # Among positives, keep the most confident
+            best_result = candidate
+
+    if best_result is None:
         raise InferenceInputError("The YOLO model returned no prediction.")
 
-    first_result = results[0]
-    if getattr(first_result, "probs", None) is not None:
-        return build_classification_response(first_result, file_name)
-
-    return build_detection_response(first_result, file_name, physical_scale)
+    return best_result
 
 
 def run_inference(*, file_bytes: bytes, file_name: str, file_type: str) -> dict:
@@ -366,10 +458,142 @@ def run_inference(*, file_bytes: bytes, file_name: str, file_type: str) -> dict:
     if settings.model_provider == "yolo":
         return run_yolo_inference(file_bytes=file_bytes, file_name=file_name)
 
-    if settings.model_provider != "stub":
-        raise UnsupportedModelProviderError(
-            f"Unsupported MODEL_PROVIDER '{settings.model_provider}'.",
+    raise UnsupportedModelProviderError(
+        f"Unsupported MODEL_PROVIDER '{settings.model_provider}'.",
+    )
+
+
+def get_dicom_instance_number(file_bytes: bytes) -> int:
+    """Return the DICOM InstanceNumber for slice ordering (0 if unavailable)."""
+    try:
+        dataset = dcmread(BytesIO(file_bytes), stop_before_pixels=True)
+        return int(getattr(dataset, "InstanceNumber", 0) or 0)
+    except Exception:
+        return 0
+
+
+SERIES_ACCEPTED_EXTENSIONS = {".dcm", ".dicom", ".png", ".jpg", ".jpeg"}
+
+MAX_POSITIVE_SLICES = 10  # Maximum number of positive slices to store
+
+
+def bytes_to_base64_data_uri(image_bytes: bytes) -> str:
+    """Encode raw PNG/JPEG bytes to a base64 data URI."""
+    encoded = base64.b64encode(image_bytes).decode("utf-8")
+    return f"data:image/png;base64,{encoded}"
+
+
+def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
+    """Run inference on a series of images (DICOM, PNG, JPEG) and return the best result.
+
+    Args:
+        files: list of (file_bytes, file_name, file_type) tuples.
+    """
+    valid_files = [
+        (fb, fn, ft)
+        for fb, fn, ft in files
+        if Path(fn).suffix.lower() in SERIES_ACCEPTED_EXTENSIONS
+    ]
+    if not valid_files:
+        raise InferenceInputError(
+            "No supported image files found in the uploaded series (DICOM, PNG, JPEG)."
         )
+
+    def _sort_key(item: tuple[bytes, str, str]) -> tuple[int, int]:
+        fn = item[1]
+        if Path(fn).suffix.lower() in {".dcm", ".dicom"}:
+            return (0, get_dicom_instance_number(item[0]))
+        return (1, 0)
+
+    sorted_files = sorted(valid_files, key=_sort_key)
+    slice_count = len(sorted_files)
+
+    if settings.model_provider == "stub":
+        fb, fn, ft = sorted_files[0]
+        result = build_stub_response(file_bytes=fb, file_name=fn, file_type=ft)
+        old_report = result.get("report_text") or ""
+        updated_report = old_report.replace(
+            "uploaded MRI", f"image series ({slice_count} images)"
+        )
+        return {**result, "report_text": updated_report, "positive_slices": []}
+
+    if settings.model_provider == "yolo":
+        model = get_yolo_model()
+        best_result: dict | None = None
+        positive_candidates: list[dict] = []  # collect {result, image_bytes, file_name}
+
+        for file_bytes, file_name, _ in sorted_files:
+            suffix = Path(file_name).suffix.lower()
+            if suffix in {".dcm", ".dicom"}:
+                temp_paths, physical_scale = build_dicom_temp_images(file_bytes)
+            else:
+                temp_paths = [write_temp_input_file(suffix=suffix, file_bytes=file_bytes)]
+                physical_scale = None
+
+            for temp_path in temp_paths:
+                try:
+                    results = model.predict(
+                        source=temp_path,
+                        conf=settings.model_confidence_threshold,
+                        verbose=False,
+                    )
+                    # Read image bytes before deleting temp file (for positive slice storage)
+                    with open(temp_path, "rb") as fp:
+                        frame_bytes = fp.read()
+                finally:
+                    Path(temp_path).unlink(missing_ok=True)
+
+                if not results:
+                    continue
+
+                first_result = results[0]
+                if getattr(first_result, "probs", None) is not None:
+                    candidate = build_classification_response(first_result, file_name)
+                else:
+                    candidate = build_detection_response(first_result, file_name, physical_scale)
+
+                if best_result is None:
+                    best_result = candidate
+                elif candidate["tumor_detected"] and not best_result["tumor_detected"]:
+                    best_result = candidate
+                elif (
+                    candidate["tumor_detected"]
+                    and best_result["tumor_detected"]
+                    and candidate["confidence"] > best_result["confidence"]
+                ):
+                    best_result = candidate
+
+                if candidate["tumor_detected"]:
+                    positive_candidates.append({
+                        "result": candidate,
+                        "image_bytes": frame_bytes,
+                        "file_name": file_name,
+                    })
+
+        if best_result is None:
+            raise InferenceInputError("The YOLO model returned no prediction for the series.")
+
+        # Sort positive slices by confidence (best first) and limit count
+        positive_candidates.sort(key=lambda x: x["result"]["confidence"], reverse=True)
+        top_candidates = positive_candidates[:MAX_POSITIVE_SLICES]
+        positive_slices = [
+            {
+                "image_data": bytes_to_base64_data_uri(c["image_bytes"]),
+                "file_name": c["file_name"],
+                "confidence": c["result"]["confidence"],
+                "tumor_type": c["result"]["tumor_type"],
+                "tumor_location": c["result"]["tumor_location"],
+                "bounding_box": c["result"]["bounding_box"],
+            }
+            for c in top_candidates
+        ]
+
+        old_report = best_result.get("report_text") or ""
+        return {
+            **best_result,
+            "report_text": f"{old_report} (Series: {slice_count} images analyzed)",
+            "positive_slices": positive_slices,
+        }
 
     raise UnsupportedModelProviderError(
         f"Unsupported MODEL_PROVIDER '{settings.model_provider}'.",

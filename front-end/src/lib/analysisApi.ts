@@ -12,6 +12,20 @@ export interface UploadedScan {
   createdAt: string;
 }
 
+export interface PositiveSlice {
+  imageData: string;
+  fileName: string;
+  confidence: number;
+  tumorType?: string | null;
+  tumorLocation?: string | null;
+  boundingBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null;
+}
+
 export interface AnalysisResult {
   id: string;
   scanId: string;
@@ -32,6 +46,7 @@ export interface AnalysisResult {
   } | null;
   reportText?: string | null;
   modelVersion?: string | null;
+  positiveSlices?: PositiveSlice[];
   createdAt: string;
 }
 
@@ -139,5 +154,22 @@ export async function getDashboardStats(token: string): Promise<DashboardStats> 
 
 export async function uploadAndAnalyzeScan(token: string, file: File): Promise<AnalysisResult> {
   const scan = await uploadScan(token, file);
+  return createAnalysis(token, scan.id);
+}
+
+export async function uploadScanSeries(token: string, files: File[]): Promise<UploadedScan> {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("files", file);
+  }
+  return apiRequest<UploadedScan>("/scans/upload-series", {
+    method: "POST",
+    headers: withAuth(token),
+    body: formData,
+  });
+}
+
+export async function uploadAndAnalyzeScanSeries(token: string, files: File[]): Promise<AnalysisResult> {
+  const scan = await uploadScanSeries(token, files);
   return createAnalysis(token, scan.id);
 }

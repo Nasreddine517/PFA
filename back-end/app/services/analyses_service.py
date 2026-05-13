@@ -8,7 +8,7 @@ from app.database.mongodb import (
 )
 from app.models.analysis import build_analysis_document
 from app.schemas.analysis import AnalysisResponse, BoundingBoxResponse
-from app.services.inference_service import run_inference
+from app.services.inference_service import run_inference, run_inference_series
 
 
 def build_analysis_response(
@@ -61,6 +61,7 @@ def build_analysis_response(
             if inference_result
             else analysis_document.get("model_version")
         ),
+        positiveSlices=analysis_document.get("positive_slices") or [],
         createdAt=analysis_document["created_at"],
     )
 
@@ -98,6 +99,42 @@ async def persist_analysis_for_scan(
         bounding_box=inference_result.get("bounding_box"),
         report_text=inference_result.get("report_text"),
         model_version=inference_result.get("model_version"),
+    )
+    insert_result = await analyses_collection.insert_one(analysis_document)
+    analysis_document["_id"] = insert_result.inserted_id
+    return analysis_document
+
+
+async def persist_analysis_for_series(
+    *,
+    doctor_id: str,
+    scan_document: dict,
+    files: list[tuple[bytes, str, str]],
+) -> dict:
+    database = get_database()
+    analyses_collection = database[get_analysis_collection_name()]
+
+    existing_analysis = await analyses_collection.find_one(
+        {"scan_id": str(scan_document["_id"]), "doctor_id": doctor_id},
+    )
+    if existing_analysis is not None:
+        return existing_analysis
+
+    inference_result = run_inference_series(files=files)
+
+    analysis_document = build_analysis_document(
+        doctor_id=doctor_id,
+        scan_id=str(scan_document["_id"]),
+        result=inference_result["result"],
+        confidence=inference_result["confidence"],
+        tumor_detected=inference_result.get("tumor_detected"),
+        tumor_type=inference_result.get("tumor_type"),
+        tumor_location=inference_result.get("tumor_location"),
+        tumor_volume=inference_result.get("tumor_volume"),
+        bounding_box=inference_result.get("bounding_box"),
+        report_text=inference_result.get("report_text"),
+        model_version=inference_result.get("model_version"),
+        positive_slices=inference_result.get("positive_slices"),
     )
     insert_result = await analyses_collection.insert_one(analysis_document)
     analysis_document["_id"] = insert_result.inserted_id

@@ -6,7 +6,7 @@ from app.core.config import settings
 from app.database.mongodb import get_database, get_scan_collection_name
 from app.models.scan import build_scan_document
 from app.schemas.analysis import ScanUploadResponse
-from app.services.analyses_service import persist_analysis_for_scan
+from app.services.analyses_service import persist_analysis_for_scan, persist_analysis_for_series
 
 
 ALLOWED_CONTENT_TYPES = {
@@ -26,6 +26,13 @@ class InvalidScanFileError(Exception):
 
 class ScanTooLargeError(Exception):
     pass
+
+
+class SeriesTooManyFilesError(Exception):
+    pass
+
+
+MAX_SERIES_FILES = 500
 
 
 def validate_scan_file(*, file_name: str, file_type: str, file_bytes: bytes) -> None:
@@ -86,6 +93,76 @@ async def create_scan(*, doctor_id: str, file_name: str, file_type: str, file_by
                     "analysis_status": "failed",
                 },
             },
+        )
+        raise
+
+    updated_scan_document = await scans_collection.find_one_and_update(
+        {"_id": scan_document["_id"]},
+        {
+            "$set": {
+                "analysis_status": "completed",
+                "latest_analysis_id": str(analysis_document["_id"]),
+            },
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+
+    return build_scan_upload_response(updated_scan_document or scan_document)
+
+
+async def create_scan_series(
+    *,
+    doctor_id: str,
+    files: list[tuple[bytes, str, str]],
+) -> ScanUploadResponse:
+    if not files:
+        raise InvalidScanFileError("No files provided.")
+
+    if len(files) > MAX_SERIES_FILES:
+        raise SeriesTooManyFilesError(
+            f"Series exceeds the maximum of {MAX_SERIES_FILES} slices."
+        )
+
+    ALLOWED_SERIES_EXTENSIONS = {".dcm", ".dicom", ".png", ".jpg", ".jpeg"}
+
+    for file_bytes, file_name, _file_type in files:
+        extension = Path(file_name).suffix.lower()
+        if extension not in ALLOWED_SERIES_EXTENSIONS:
+            raise InvalidScanFileError(
+                "Series files must be DICOM (.dcm), PNG, or JPEG images."
+            )
+        if len(file_bytes) == 0:
+            raise InvalidScanFileError(f"Uploaded file is empty: {file_name}")
+
+    total_size = sum(len(fb) for fb, _, _ in files)
+    max_series_bytes = settings.max_upload_size_mb * 1024 * 1024 * 20
+    if total_size > max_series_bytes:
+        raise ScanTooLargeError("Image series exceeds the maximum allowed total size.")
+
+    series_name = f"Image Series ({len(files)} images)"
+    scan_document = build_scan_document(
+        doctor_id=doctor_id,
+        file_name=series_name,
+        file_type="application/dicom",
+        file_size=total_size,
+        analysis_status="pending",
+    )
+
+    database = get_database()
+    scans_collection = database[get_scan_collection_name()]
+    insert_result = await scans_collection.insert_one(scan_document)
+    scan_document["_id"] = insert_result.inserted_id
+
+    try:
+        analysis_document = await persist_analysis_for_series(
+            doctor_id=doctor_id,
+            scan_document=scan_document,
+            files=files,
+        )
+    except Exception:
+        await scans_collection.find_one_and_update(
+            {"_id": scan_document["_id"]},
+            {"$set": {"analysis_status": "failed"}},
         )
         raise
 
