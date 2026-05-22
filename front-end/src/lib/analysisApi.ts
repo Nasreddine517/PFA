@@ -36,7 +36,9 @@ export interface AnalysisResult {
   confidence: number;
   tumorDetected?: boolean | null;
   tumorType?: string | null;
+  tumorGrade?: string | null;
   tumorLocation?: string | null;
+  tumorSize?: string | null;
   tumorVolume?: string | null;
   boundingBox?: {
     x: number;
