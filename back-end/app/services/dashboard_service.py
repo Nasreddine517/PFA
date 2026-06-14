@@ -1,15 +1,9 @@
-from app.database.mongodb import get_analysis_collection_name, get_database
+from app.repositories import analysis_repository
 from app.schemas.dashboard import DashboardAnalysisSummary, DashboardStatsResponse
 
 
 async def get_dashboard_stats(*, doctor_id: str) -> DashboardStatsResponse:
-    database = get_database()
-    analyses_collection = database[get_analysis_collection_name()]
-
-    analysis_documents = await analyses_collection.find(
-        {"doctor_id": doctor_id},
-        {"result": 1, "confidence": 1, "created_at": 1},
-    ).sort("created_at", -1).to_list(length=None)
+    analysis_documents = await analysis_repository.find_all_by_doctor(doctor_id)
 
     analyses = [
         DashboardAnalysisSummary(

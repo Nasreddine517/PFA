@@ -230,11 +230,14 @@ const UploadPage = () => {
     return () => clearInterval(interval);
   }, [isAnalyzing]);
 
-  const isDicom = (f: File) =>
-    f.name.toLowerCase().endsWith(".dcm") ||
-    f.name.toLowerCase().endsWith(".dicom") ||
-    f.type === "application/dicom" ||
-    f.type === "application/dicom+json";
+  const isDicom = (f: File) => {
+    const name = f.name.toLowerCase();
+    if (name.endsWith(".dcm") || name.endsWith(".dicom")) return true;
+    if (f.type === "application/dicom" || f.type === "application/dicom+json") return true;
+    // DICOM files often have no extension (e.g. IMG00001)
+    if (!name.includes(".") && !f.type.startsWith("image/")) return true;
+    return false;
+  };
 
   const handleFile = useCallback((f: File) => {
     setFile(f);
@@ -251,7 +254,7 @@ const UploadPage = () => {
     e.preventDefault();
     setIsDragging(false);
     const f = e.dataTransfer.files[0];
-    if (f && (f.type.startsWith("image/") || isDicom(f))) handleFile(f);
+    if (f) handleFile(f);
   }, [handleFile]);
 
   const toggleSymptom = (label: string) => {
@@ -910,16 +913,20 @@ const UploadPage = () => {
                               <input
                                 type="file"
                                 multiple
-                                accept="image/*,.dcm,.dicom,application/dicom"
+                                accept="*"
                                 className="hidden"
                                 onChange={(e) => {
                                   const fileList = e.target.files;
                                   if (fileList && fileList.length > 0) {
                                     const validFiles = Array.from(fileList).filter(
-                                      (f) =>
-                                        f.type.startsWith("image/") ||
-                                        f.name.toLowerCase().endsWith(".dcm") ||
-                                        f.name.toLowerCase().endsWith(".dicom")
+                                      (f) => {
+                                        const name = f.name.toLowerCase();
+                                        if (f.type.startsWith("image/")) return true;
+                                        if (name.endsWith(".dcm") || name.endsWith(".dicom")) return true;
+                                        // DICOM files without extension (e.g. IMG00001)
+                                        if (!name.includes(".") && !f.type.startsWith("image/")) return true;
+                                        return false;
+                                      }
                                     );
                                     if (validFiles.length > 0) setDicomSeries(validFiles);
                                   }
@@ -988,7 +995,7 @@ const UploadPage = () => {
                           </h3>
                           <p className="text-sm text-muted-foreground mb-6">{t("up.formats")}</p>
                           <label>
-                            <input type="file" accept="image/*,.dcm,.dicom,application/dicom" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+                            <input type="file" accept="*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
                             <Button variant="outline" asChild className="gap-2 border-primary/40 hover:border-primary/70 hover:bg-primary/5 transition-all duration-300 h-11 px-6">
                               <span className="cursor-pointer"><FileImage className="w-4 h-4" /> {t("up.browse")}</span>
                             </Button>

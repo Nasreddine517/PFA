@@ -1,8 +1,6 @@
 from datetime import UTC, datetime
 
-from pymongo import ReturnDocument
-
-from app.database.mongodb import get_database, get_user_collection_name
+from app.repositories import user_repository
 from app.schemas.auth import UpdateCurrentUserRequest, UserResponse
 from app.services.auth_service import build_user_response
 
@@ -17,12 +15,8 @@ async def update_current_user(
 
     updates["updated_at"] = datetime.now(UTC)
 
-    database = get_database()
-    users_collection = database[get_user_collection_name()]
-    updated_user_document = await users_collection.find_one_and_update(
-        {"_id": current_user_document["_id"]},
-        {"$set": updates},
-        return_document=ReturnDocument.AFTER,
+    updated_user_document = await user_repository.update(
+        current_user_document["_id"], updates
     )
 
     if updated_user_document is None:

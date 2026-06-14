@@ -9,7 +9,9 @@ from tempfile import NamedTemporaryFile
 import numpy as np
 from PIL import Image
 from pydicom import dcmread
+from pydicom.dataset import FileMetaDataset
 from pydicom.errors import InvalidDicomError
+from pydicom.uid import ExplicitVRLittleEndian, ImplicitVRLittleEndian
 from ultralytics import YOLO
 
 from app.core.config import settings
@@ -146,7 +148,35 @@ def extract_physical_scale(dataset) -> PhysicalScale | None:
     return None
 
 
+def _ensure_transfer_syntax(dataset) -> None:
+    """Inject a TransferSyntaxUID when missing (pydicom 3.x requires it).
+
+    Files read with force=True that have no DICOM meta header lack
+    TransferSyntaxUID, causing pixel_array to raise AttributeError.
+    We detect the actual VR encoding pydicom used while reading the file
+    (via dataset.read_implicit_vr) to pick the correct UID.
+    """
+    try:
+        if dataset.file_meta.TransferSyntaxUID:
+            return
+    except AttributeError:
+        pass
+
+    if not hasattr(dataset, "file_meta") or dataset.file_meta is None:
+        dataset.file_meta = FileMetaDataset()
+
+    # read_implicit_vr reflects how pydicom actually decoded the file.
+    # True  → Implicit VR Little Endian (old DICOM, no meta header)
+    # False → Explicit VR Little Endian (modern DICOM, no meta header)
+    # Missing → default to Implicit VR (the pre-1995 standard)
+    if getattr(dataset, "read_implicit_vr", True):
+        dataset.file_meta.TransferSyntaxUID = ImplicitVRLittleEndian
+    else:
+        dataset.file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+
+
 def normalize_dicom_pixels(dataset) -> np.ndarray:
+    _ensure_transfer_syntax(dataset)
     try:
         pixel_array = dataset.pixel_array
     except Exception as exc:  # pragma: no cover - depends on transfer syntax support
@@ -204,6 +234,7 @@ def _normalize_frame(raw_frame: np.ndarray, *, rescale_slope: float, rescale_int
 
 def extract_all_dicom_frames(dataset) -> list[np.ndarray]:
     """Return all slices of a DICOM dataset as a list of normalized uint8 arrays."""
+    _ensure_transfer_syntax(dataset)
     try:
         pixel_array = dataset.pixel_array
     except Exception as exc:  # pragma: no cover
@@ -246,27 +277,13 @@ def write_temp_input_file(*, suffix: str, file_bytes: bytes) -> str:
         return temp_file.name
 
 
-def build_dicom_temp_image(file_bytes: bytes) -> tuple[str, PhysicalScale | None]:
-    try:
-        dataset = dcmread(BytesIO(file_bytes))
-    except InvalidDicomError as exc:
-        raise InferenceInputError("The uploaded DICOM file is invalid.") from exc
-
-    image_array = normalize_dicom_pixels(dataset)
-    image_mode = "L" if image_array.ndim == 2 else "RGB"
-
-    with NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
-        Image.fromarray(image_array, mode=image_mode).save(temp_file, format="PNG")
-        return temp_file.name, extract_physical_scale(dataset)
-
-
 def build_dicom_temp_images(file_bytes: bytes) -> tuple[list[str], PhysicalScale | None]:
     """Convert every slice of a (possibly multi-frame) DICOM into a temp PNG.
 
     Returns a list of temp file paths and the shared physical scale.
     """
     try:
-        dataset = dcmread(BytesIO(file_bytes))
+        dataset = dcmread(BytesIO(file_bytes), force=True)
     except InvalidDicomError as exc:
         raise InferenceInputError("The uploaded DICOM file is invalid.") from exc
 
@@ -397,11 +414,17 @@ def build_classification_response(result, file_name: str) -> dict:
     }
 
 
+def bytes_to_base64_data_uri(image_bytes: bytes) -> str:
+    encoded = base64.b64encode(image_bytes).decode("utf-8")
+    return f"data:image/png;base64,{encoded}"
+
+
 def run_yolo_inference(*, file_bytes: bytes, file_name: str) -> dict:
     model = get_yolo_model()
     suffix = Path(file_name).suffix.lower()
 
-    if suffix in {".dcm", ".dicom"}:
+    # DICOM files with extension OR with no extension at all (e.g. IMG00001)
+    if suffix in {".dcm", ".dicom"} or suffix == "":
         temp_paths, physical_scale = build_dicom_temp_images(file_bytes)
     elif suffix in {".jpeg", ".jpg", ".png"}:
         temp_paths = [write_temp_input_file(suffix=suffix, file_bytes=file_bytes)]
@@ -412,6 +435,7 @@ def run_yolo_inference(*, file_bytes: bytes, file_name: str) -> dict:
         )
 
     best_result: dict | None = None
+    preview_image_data: str | None = None
 
     for temp_path in temp_paths:
         try:
@@ -420,6 +444,10 @@ def run_yolo_inference(*, file_bytes: bytes, file_name: str) -> dict:
                 conf=settings.model_confidence_threshold,
                 verbose=False,
             )
+            with open(temp_path, "rb") as fp:
+                frame_bytes = fp.read()
+            if preview_image_data is None:
+                preview_image_data = bytes_to_base64_data_uri(frame_bytes)
         finally:
             Path(temp_path).unlink(missing_ok=True)
 
@@ -444,7 +472,7 @@ def run_yolo_inference(*, file_bytes: bytes, file_name: str) -> dict:
     if best_result is None:
         raise InferenceInputError("The YOLO model returned no prediction.")
 
-    return best_result
+    return {**best_result, "preview_image_data": preview_image_data}
 
 
 def run_inference(*, file_bytes: bytes, file_name: str, file_type: str) -> dict:
@@ -466,7 +494,7 @@ def run_inference(*, file_bytes: bytes, file_name: str, file_type: str) -> dict:
 def get_dicom_instance_number(file_bytes: bytes) -> int:
     """Return the DICOM InstanceNumber for slice ordering (0 if unavailable)."""
     try:
-        dataset = dcmread(BytesIO(file_bytes), stop_before_pixels=True)
+        dataset = dcmread(BytesIO(file_bytes), stop_before_pixels=True, force=True)
         return int(getattr(dataset, "InstanceNumber", 0) or 0)
     except Exception:
         return 0
@@ -475,12 +503,7 @@ def get_dicom_instance_number(file_bytes: bytes) -> int:
 SERIES_ACCEPTED_EXTENSIONS = {".dcm", ".dicom", ".png", ".jpg", ".jpeg"}
 
 MAX_POSITIVE_SLICES = 10  # Maximum number of positive slices to store
-
-
-def bytes_to_base64_data_uri(image_bytes: bytes) -> str:
-    """Encode raw PNG/JPEG bytes to a base64 data URI."""
-    encoded = base64.b64encode(image_bytes).decode("utf-8")
-    return f"data:image/png;base64,{encoded}"
+SERIES_CONFIDENCE_THRESHOLD = 55.0  # Minimum per-image top-1 confidence (%) to count toward aggregation
 
 
 def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
@@ -492,7 +515,8 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
     valid_files = [
         (fb, fn, ft)
         for fb, fn, ft in files
-        if Path(fn).suffix.lower() in SERIES_ACCEPTED_EXTENSIONS
+        # No extension = DICOM without .dcm (e.g. IMG00001)
+        if Path(fn).suffix.lower() in SERIES_ACCEPTED_EXTENSIONS or Path(fn).suffix == ""
     ]
     if not valid_files:
         raise InferenceInputError(
@@ -501,7 +525,8 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
 
     def _sort_key(item: tuple[bytes, str, str]) -> tuple[int, int]:
         fn = item[1]
-        if Path(fn).suffix.lower() in {".dcm", ".dicom"}:
+        sfx = Path(fn).suffix.lower()
+        if sfx in {".dcm", ".dicom"} or sfx == "":
             return (0, get_dicom_instance_number(item[0]))
         return (1, 0)
 
@@ -519,12 +544,16 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
 
     if settings.model_provider == "yolo":
         model = get_yolo_model()
-        best_result: dict | None = None
+        # Cumulative class scores across all images that pass the confidence threshold
+        cumulative_scores: dict[str, float] = {}
+        # Best single positive result kept for details (location, volume, bounding_box, report)
+        best_positive_result: dict | None = None
         positive_candidates: list[dict] = []  # collect {result, image_bytes, file_name}
+        preview_image_data: str | None = None  # first frame captured for display
 
         for file_bytes, file_name, _ in sorted_files:
             suffix = Path(file_name).suffix.lower()
-            if suffix in {".dcm", ".dicom"}:
+            if suffix in {".dcm", ".dicom"} or suffix == "":
                 temp_paths, physical_scale = build_dicom_temp_images(file_bytes)
             else:
                 temp_paths = [write_temp_input_file(suffix=suffix, file_bytes=file_bytes)]
@@ -540,6 +569,9 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
                     # Read image bytes before deleting temp file (for positive slice storage)
                     with open(temp_path, "rb") as fp:
                         frame_bytes = fp.read()
+                    # Capture the very first frame as a preview image for the results page
+                    if preview_image_data is None:
+                        preview_image_data = bytes_to_base64_data_uri(frame_bytes)
                 finally:
                     Path(temp_path).unlink(missing_ok=True)
 
@@ -547,21 +579,32 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
                     continue
 
                 first_result = results[0]
+                names = first_result.names or {}
+
                 if getattr(first_result, "probs", None) is not None:
                     candidate = build_classification_response(first_result, file_name)
+                    # Aggregation: add all class probabilities when top-1 meets the threshold
+                    probs = first_result.probs
+                    top1_conf_pct = round(float(probs.top1conf) * 100, 1)
+                    if top1_conf_pct >= SERIES_CONFIDENCE_THRESHOLD:
+                        for class_idx, score in enumerate(probs.data.tolist()):
+                            class_name = str(names.get(class_idx, f"class_{class_idx}"))
+                            cumulative_scores[class_name] = (
+                                cumulative_scores.get(class_name, 0.0) + float(score) * 100
+                            )
                 else:
                     candidate = build_detection_response(first_result, file_name, physical_scale)
-
-                if best_result is None:
-                    best_result = candidate
-                elif candidate["tumor_detected"] and not best_result["tumor_detected"]:
-                    best_result = candidate
-                elif (
-                    candidate["tumor_detected"]
-                    and best_result["tumor_detected"]
-                    and candidate["confidence"] > best_result["confidence"]
-                ):
-                    best_result = candidate
+                    # Aggregation: add top-box confidence to its class when it meets the threshold
+                    boxes = first_result.boxes
+                    if boxes is not None and len(boxes) > 0:
+                        top_box = boxes[0]
+                        top_conf_pct = round(float(top_box.conf[0]) * 100, 1)
+                        if top_conf_pct >= SERIES_CONFIDENCE_THRESHOLD:
+                            class_idx = int(top_box.cls[0])
+                            class_name = str(names.get(class_idx, f"class_{class_idx}"))
+                            cumulative_scores[class_name] = (
+                                cumulative_scores.get(class_name, 0.0) + top_conf_pct
+                            )
 
                 if candidate["tumor_detected"]:
                     positive_candidates.append({
@@ -569,9 +612,78 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
                         "image_bytes": frame_bytes,
                         "file_name": file_name,
                     })
+                    if best_positive_result is None or candidate["confidence"] > best_positive_result["confidence"]:
+                        best_positive_result = candidate
 
-        if best_result is None:
-            raise InferenceInputError("The YOLO model returned no prediction for the series.")
+        # --- Aggregated decision across the series ---
+        if not cumulative_scores:
+            # No image reached the confidence threshold
+            if positive_candidates:
+                # Graceful fallback: use the most confident positive slice found
+                best_fb = max(positive_candidates, key=lambda c: c["result"]["confidence"])
+                final_result = best_fb["result"]
+            else:
+                final_result = {
+                    "result": "negative",
+                    "confidence": 0.0,
+                    "tumor_detected": False,
+                    "tumor_type": None,
+                    "tumor_location": None,
+                    "tumor_volume": None,
+                    "bounding_box": None,
+                    "report_text": (
+                        f"No conclusive finding in the image series ({slice_count} images). "
+                        f"All predictions were below the {SERIES_CONFIDENCE_THRESHOLD:.0f}% confidence threshold."
+                    ),
+                    "model_version": Path(settings.model_weights_path).name,
+                }
+        else:
+            total_score = sum(cumulative_scores.values())
+            winner_class = max(cumulative_scores, key=lambda k: cumulative_scores[k])
+            winner_score = cumulative_scores[winner_class]
+            aggregated_confidence = round((winner_score / total_score) * 100, 1) if total_score > 0 else 0.0
+            positive = is_positive_label(winner_class)
+
+            if positive and best_positive_result is not None:
+                # Reuse details (location, volume, bounding_box, report_text) from the best
+                # single positive result; only override class and aggregated confidence.
+                final_result = {
+                    **best_positive_result,
+                    "result": "positive",
+                    "confidence": aggregated_confidence,
+                    "tumor_type": winner_class,
+                    "tumor_detected": True,
+                }
+            elif positive:
+                final_result = {
+                    "result": "positive",
+                    "confidence": aggregated_confidence,
+                    "tumor_detected": True,
+                    "tumor_type": winner_class,
+                    "tumor_location": None,
+                    "tumor_volume": None,
+                    "bounding_box": None,
+                    "report_text": (
+                        f"Aggregated series analysis detected {winner_class} with "
+                        f"{aggregated_confidence:.1f}% cumulative confidence."
+                    ),
+                    "model_version": Path(settings.model_weights_path).name,
+                }
+            else:
+                final_result = {
+                    "result": "negative",
+                    "confidence": aggregated_confidence,
+                    "tumor_detected": False,
+                    "tumor_type": None,
+                    "tumor_location": None,
+                    "tumor_volume": None,
+                    "bounding_box": None,
+                    "report_text": (
+                        f"No tumor detected. The dominant class across the series was "
+                        f"'{winner_class}' with {aggregated_confidence:.1f}% aggregated confidence."
+                    ),
+                    "model_version": Path(settings.model_weights_path).name,
+                }
 
         # Sort positive slices by confidence (best first) and limit count
         positive_candidates.sort(key=lambda x: x["result"]["confidence"], reverse=True)
@@ -588,11 +700,25 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
             for c in top_candidates
         ]
 
-        old_report = best_result.get("report_text") or ""
+        # Use the highest-confidence positive slice of the winning class as preview.
+        # Fall back to the first frame if no such candidate exists.
+        winning_type = final_result.get("tumor_type")
+        best_preview_candidate = next(
+            (
+                c for c in positive_candidates
+                if winning_type and c["result"].get("tumor_type") == winning_type
+            ),
+            positive_candidates[0] if positive_candidates else None,
+        )
+        if best_preview_candidate is not None:
+            preview_image_data = bytes_to_base64_data_uri(best_preview_candidate["image_bytes"])
+
+        old_report = final_result.get("report_text") or ""
         return {
-            **best_result,
+            **final_result,
             "report_text": f"{old_report} (Series: {slice_count} images analyzed)",
             "positive_slices": positive_slices,
+            "preview_image_data": preview_image_data,
         }
 
     raise UnsupportedModelProviderError(

@@ -20,6 +20,8 @@ interface ReportData {
   doctorHospital?: string;
 }
 
+type RGB = [number, number, number];
+
 const loadImageAsBase64 = (url: string): Promise<string | null> =>
   new Promise((resolve) => {
     const img = new Image();
@@ -159,71 +161,87 @@ const buildReportText = (data: ReportData): string => {
   return `L'analyse par intelligence artificielle NeuroScan a mis en evidence une suspicion de ${type}${grade} localisee dans la ${loc} du cerveau, avec un niveau de confiance diagnostique de ${conf}%. La morphologie et la densite de la lesion identifiee evoquent une origine neoplasique primitive. Le parenchyme cerebral environnant presente des modifications structurelles compatibles avec un processus expansif. Au vu de ces elements, un scanner cerebral injecte ainsi qu'une consultation urgente en neurochirurgie ou en neuro-oncologie sont fortement recommandes pour confirmation diagnostique et prise en charge adaptee.`;
 };
 
-function _noImg(doc: jsPDF, x: number, w: number, y: number, h: number, color: [number, number, number]) {
-  doc.setTextColor(...color);
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(9);
-  doc.text("Image non disponible", x + w / 2, y + h / 2, { align: "center" });
-}
 
-// ── Ajoute une nouvelle page avec header leger ────────────────────────────
-const addPage = (doc: jsPDF, W: number, C: Record<string, [number,number,number]>, now: Date) => {
-  doc.addPage();
-  doc.setFillColor(...C.navy);
-  doc.rect(0, 0, W, 14, "F");
-  doc.setFillColor(...C.blue);
-  doc.rect(0, 12, W, 2, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(...C.white);
-  doc.text("Neuro", 14, 9);
-  const nW = doc.getTextWidth("Neuro");
-  doc.setTextColor(...C.blueBright);
-  doc.text("Scan", 14 + nW, 9);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
-  doc.setTextColor(180, 200, 235);
-  doc.text(`Rapport d'Analyse Cerebrale  ·  ${now.toLocaleDateString("fr-FR")}`, W - 14, 9, { align: "right" });
-  return 20; // curY apres le mini header
-};
 
 export const generateMedicalReport = async (data: ReportData) => {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const W = doc.internal.pageSize.getWidth();
-  const H = doc.internal.pageSize.getHeight();
+  const W = doc.internal.pageSize.getWidth();   // 210
+  const H = doc.internal.pageSize.getHeight();  // 297
   const isPositive = data.result === "positive";
   const mX = 14;
   const tW = W - mX * 2;
 
-  const C: Record<string, [number,number,number]> = {
-    navy:        [10, 20, 55],
-    navyMid:     [20, 40, 90],
+  // ── Palette ──────────────────────────────────────────────────────────────
+  const C: Record<string, RGB> = {
+    navy:        [5,  12, 45],
+    navyMid:     [18, 40, 95],
+    navyLight:   [28, 60, 130],
     blue:        [37, 99, 195],
     blueSoft:    [219, 234, 254],
     blueText:    [29, 78, 160],
     blueBright:  [96, 165, 250],
-    red:         [185, 28, 28],
+    blueGlow:    [60, 120, 230],
+    gold:        [210, 165, 45],
+    goldLight:   [245, 215, 130],
+    red:         [190, 28, 28],
     redSoft:     [254, 226, 226],
+    redBright:   [239, 68,  68],
     redText:     [153, 27, 27],
-    green:       [21, 128, 61],
-    greenSoft:   [220, 252, 231],
+    teal:        [13, 140, 110],
+    tealSoft:    [210, 248, 238],
+    tealText:    [10, 100, 80],
     amber:       [161, 98, 7],
     amberSoft:   [254, 243, 199],
     amberBorder: [217, 119, 6],
     white:       [255, 255, 255],
-    offWhite:    [248, 250, 252],
-    grayDark:    [15, 23, 42],
-    grayMid:     [100, 116, 139],
-    grayLight:   [203, 213, 225],
-    grayBorder:  [226, 232, 240],
+    offWhite:    [246, 249, 255],
+    grayDark:    [20, 30, 55],
+    grayMid:     [95, 115, 145],
+    grayLight:   [200, 215, 235],
+    grayBorder:  [220, 230, 245],
   };
 
-  const STATUS   = isPositive ? C.red     : C.green;
-  const STATUS_S = isPositive ? C.redSoft : C.greenSoft;
-  const STATUS_T = isPositive ? C.redText : C.green;
+  const STATUS   = isPositive ? C.red      : C.teal;
+  const STATUS_S = isPositive ? C.redSoft  : C.tealSoft;
+  const STATUS_T = isPositive ? C.redText  : C.tealText;
+  const STATUS_B = isPositive ? C.redBright: C.teal;
 
+  // ── Helpers ──────────────────────────────────────────────────────────────
   const rr = (x: number, y: number, w: number, h: number, r: number, s: "F"|"S"|"FD" = "F") =>
     doc.roundedRect(x, y, w, h, r, r, s);
+
+  // Gradient background: fills a rect with a linear gradient by stacking thin rects
+  const gradRect = (
+    x: number, y: number, w: number, h: number,
+    from: RGB, to: RGB, steps = 24
+  ) => {
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1);
+      doc.setFillColor(
+        Math.round(from[0] + (to[0] - from[0]) * t),
+        Math.round(from[1] + (to[1] - from[1]) * t),
+        Math.round(from[2] + (to[2] - from[2]) * t),
+      );
+      doc.rect(x, y + i * (h / steps), w, h / steps + 0.5, "F");
+    }
+  };
+
+  // Draw arc using line segments
+  const drawArc = (cx: number, cy: number, r: number, startDeg: number, endDeg: number, color: RGB, lw: number) => {
+    const steps = 60;
+    const s = (startDeg * Math.PI) / 180;
+    const e = (endDeg   * Math.PI) / 180;
+    doc.setDrawColor(...color);
+    doc.setLineWidth(lw);
+    for (let i = 0; i < steps; i++) {
+      const t1 = s + (e - s) * (i       / steps);
+      const t2 = s + (e - s) * ((i + 1) / steps);
+      doc.line(
+        cx + r * Math.cos(t1), cy + r * Math.sin(t1),
+        cx + r * Math.cos(t2), cy + r * Math.sin(t2)
+      );
+    }
+  };
 
   const now               = new Date();
   const fmtDT             = (d: Date) =>
@@ -232,134 +250,212 @@ export const generateMedicalReport = async (data: ReportData) => {
   const reportText        = buildReportText(data);
   const tumorTypeFR       = translateTumorType(data.tumorType);
   const locationFR        = translateLocation(data.tumorLocation);
+  const confidencePct     = data.confidence ?? 0;
 
-  // ════════════════════════════════════════════════════════════════════════
-  // 1. HEADER PAGE 1
-  // ════════════════════════════════════════════════════════════════════════
-  doc.setFillColor(...C.navy);
-  doc.rect(0, 0, W, 45, "F");
+  let pageNum = 1;
+  const stampPageNumber = (pn: number) => {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(...C.grayMid);
+    doc.text(`— ${pn} —`, W / 2, H - 5, { align: "center" });
+  };
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PAGE 1
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // ── 1. HEADER — gradient deep navy → blue ────────────────────────────────
+  const hdrH = 60;
+  gradRect(0, 0, W, hdrH, C.navy, C.navyLight, 30);
+
+  // Decorative semi-transparent circles (blended color, top-right corner)
+  const blendCircle = (cx: number, cy: number, r: number, t: number) => {
+    doc.setFillColor(
+      Math.round(C.navyLight[0] + (C.blueBright[0] - C.navyLight[0]) * t),
+      Math.round(C.navyLight[1] + (C.blueBright[1] - C.navyLight[1]) * t),
+      Math.round(C.navyLight[2] + (C.blueBright[2] - C.navyLight[2]) * t),
+    );
+    doc.circle(cx, cy, r, "F");
+  };
+  blendCircle(W + 2,  -4,  45, 0.09);
+  blendCircle(W - 12, 28,  28, 0.07);
+  blendCircle(W - 40, 58,  16, 0.05);
+  blendCircle(-6,      4,  22, 0.07);
+
+  // Gold accent bar + blue border
+  doc.setFillColor(...C.gold);
+  doc.rect(0, hdrH - 3, W * 0.55, 1.5, "F");
   doc.setFillColor(...C.blue);
-  doc.rect(0, 42, W, 3, "F");
+  doc.rect(0, hdrH - 1.5, W, 2, "F");
 
+  // NeuroScan wordmark
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(26);
+  doc.setFontSize(32);
   doc.setTextColor(...C.white);
-  doc.text("Neuro", mX, 22);
+  doc.text("Neuro", mX, 24);
   const neuroW = doc.getTextWidth("Neuro");
   doc.setTextColor(...C.blueBright);
-  doc.text("Scan", mX + neuroW, 22);
+  doc.text("Scan", mX + neuroW, 24);
 
+  // Tagline
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
-  doc.setTextColor(160, 185, 225);
-  doc.text("INTELLIGENCE ARTIFICIELLE MEDICALE", mX, 30);
+  doc.setTextColor(...C.gold);
+  doc.text("INTELLIGENCE ARTIFICIELLE MEDICALE  ·  ANALYSE IRM CEREBRALE", mX, 31);
 
+  // Horizontal rule under tagline
+  doc.setDrawColor(...C.blueGlow);
+  doc.setLineWidth(0.35);
+  doc.line(mX, 34, mX + 88, 34);
+
+  // Reference & confidential tag
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.5);
+  doc.setTextColor(120, 155, 210);
+  doc.text(`REF : NSR-${data.patientId}-${now.getFullYear()}`, mX, 41);
+  doc.setTextColor(100, 135, 200);
+  doc.text("DOCUMENT MEDICAL CONFIDENTIEL", mX, 48);
+
+  // Right side — report title + meta
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
+  doc.setFontSize(15);
   doc.setTextColor(...C.white);
-  doc.text("Rapport d'Analyse Cerebrale", W - mX, 14, { align: "right" });
+  doc.text("Rapport d'Analyse Cerebrale", W - mX, 15, { align: "right" });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
-  doc.setTextColor(180, 200, 235);
-  doc.text(`Genere le : ${fmtDT(now)}`, W - mX, 22, { align: "right" });
+  doc.setTextColor(...C.goldLight);
+  doc.text(`Genere le : ${fmtDT(now)}`, W - mX, 23, { align: "right" });
+
   if (data.doctorName) {
-    const drSpec = data.doctorSpecialty ? `  -  ${data.doctorSpecialty}` : "";
-    doc.text(`Dr. ${data.doctorName}${drSpec}`, W - mX, 30, { align: "right" });
-    if (data.doctorHospital) doc.text(data.doctorHospital, W - mX, 37, { align: "right" });
+    doc.setTextColor(185, 210, 255);
+    const drSpec = data.doctorSpecialty ? `  ·  ${data.doctorSpecialty}` : "";
+    doc.text(`Dr. ${data.doctorName}${drSpec}`, W - mX, 31, { align: "right" });
+    if (data.doctorHospital) {
+      doc.setTextColor(155, 185, 240);
+      doc.text(data.doctorHospital, W - mX, 39, { align: "right" });
+    }
+    doc.setTextColor(130, 165, 230);
+    doc.text(`Date du scan : ${scanDateFormatted}`, W - mX, data.doctorHospital ? 47 : 39, { align: "right" });
   } else {
-    doc.text("NeuroScan AI Analysis System", W - mX, 30, { align: "right" });
+    doc.setTextColor(185, 210, 255);
+    doc.text("NeuroScan AI Analysis System", W - mX, 31, { align: "right" });
+    doc.setTextColor(155, 185, 240);
+    doc.text(`Date du scan : ${scanDateFormatted}`, W - mX, 39, { align: "right" });
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  // 2. TABLEAU PATIENT
-  // ════════════════════════════════════════════════════════════════════════
-  const tY = 52;
-  const tH = 26;
+  let curY = hdrH + 8;
 
+  // ── 2. PATIENT INFO CARD ──────────────────────────────────────────────────
+  const patH = 32;
+
+  // Card drop-shadow (slightly offset dark rect)
+  doc.setFillColor(185, 205, 235);
+  rr(mX + 0.8, curY + 0.8, tW, patH, 4, "F");
+
+  // Card background + border
   doc.setFillColor(...C.white);
   doc.setDrawColor(...C.blue);
-  doc.setLineWidth(0.7);
-  rr(mX, tY, tW, tH, 3, "FD");
+  doc.setLineWidth(0.6);
+  rr(mX, curY, tW, patH, 4, "FD");
 
-  doc.setFillColor(...C.navyMid);
-  rr(mX, tY, tW, 8, 3, "F");
-  doc.rect(mX, tY + 4, tW, 4, "F");
+  // Left colored strip
+  doc.setFillColor(...C.blue);
+  rr(mX, curY, 5, patH, 2, "F");
+  doc.rect(mX + 3, curY, 2, patH, "F");
 
+  // "INFORMATIONS PATIENT" label
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5);
-  doc.setTextColor(...C.white);
-  doc.text("INFORMATIONS PATIENT", mX + tW / 2, tY + 5.8, { align: "center" });
+  doc.setFontSize(7);
+  doc.setTextColor(...C.blueText);
+  doc.text("INFORMATIONS PATIENT", mX + 10, curY + 7);
 
-  const cols = [
-    { label: "NOM COMPLET",  value: data.patientName },
-    { label: "ID PATIENT",   value: String(data.patientId) },
-    { label: "DATE DU SCAN", value: scanDateFormatted },
+  // 3 data columns
+  const patCols = [
+    { badge: "P",  label: "Nom Complet",  value: data.patientName },
+    { badge: "ID", label: "Identifiant",  value: String(data.patientId) },
+    { badge: "D",  label: "Date du Scan", value: scanDateFormatted },
   ];
-  const cW = tW / 3;
-  cols.forEach((col, i) => {
-    const cx = mX + i * cW;
-    doc.setFillColor(i % 2 === 0 ? 255 : 240, i % 2 === 0 ? 255 : 246, 255);
-    doc.rect(cx, tY + 8, cW, tH - 8, "F");
+  const cW3 = (tW - 5) / 3;
+  patCols.forEach((col, i) => {
+    const cx = mX + 5 + i * cW3;
     if (i > 0) {
-      doc.setDrawColor(...C.grayLight);
+      doc.setDrawColor(...C.grayBorder);
       doc.setLineWidth(0.3);
-      doc.line(cx, tY + 8, cx, tY + tH);
+      doc.line(cx, curY + 10, cx, curY + patH - 3);
     }
+    // Badge pill
+    doc.setFillColor(...C.blueSoft);
+    rr(cx + 4, curY + 12, 9, 5, 2, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(5.5);
+    doc.setTextColor(...C.blue);
+    doc.text(col.badge, cx + 8.5, curY + 15.5, { align: "center" });
+
     doc.setFont("helvetica", "normal");
     doc.setFontSize(6.5);
     doc.setTextColor(...C.grayMid);
-    doc.text(col.label, cx + cW / 2, tY + 13.5, { align: "center" });
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(...C.grayDark);
-    const val = col.value.length > 22 ? col.value.substring(0, 20) + "..." : col.value;
-    doc.text(val, cx + cW / 2, tY + 21.5, { align: "center" });
-  });
-  doc.setDrawColor(...C.blue);
-  doc.setLineWidth(0.7);
-  rr(mX, tY, tW, tH, 3, "S");
+    doc.text(col.label, cx + cW3 / 2 + 2, curY + 13.5, { align: "center" });
 
-  // ════════════════════════════════════════════════════════════════════════
-  // 3. BANNIERE STATUT
-  // ════════════════════════════════════════════════════════════════════════
-  const stY = tY + tH + 6;
-  const stH = 20;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10.5);
+    doc.setTextColor(...C.grayDark);
+    const val = col.value.length > 24 ? col.value.substring(0, 22) + "..." : col.value;
+    doc.text(val, cx + cW3 / 2 + 2, curY + 24.5, { align: "center" });
+  });
+
+  curY += patH + 6;
+
+  // ── 3. STATUS BANNER ──────────────────────────────────────────────────────
+  const stH = 24;
+
+  // Shadow
+  doc.setFillColor(
+    isPositive ? 210 : 140,
+    isPositive ? 160 : 210,
+    isPositive ? 160 : 195
+  );
+  rr(mX + 0.8, curY + 0.8, tW, stH, 4, "F");
 
   doc.setFillColor(...STATUS_S);
   doc.setDrawColor(...STATUS);
-  doc.setLineWidth(0.7);
-  rr(mX, stY, tW, stH, 3, "FD");
+  doc.setLineWidth(0.8);
+  rr(mX, curY, tW, stH, 4, "FD");
+
+  // Left bold accent strip
   doc.setFillColor(...STATUS);
-  rr(mX, stY, 6, stH, 2, "F");
-  doc.rect(mX, stY, 3, stH, "F");
+  rr(mX, curY, 8, stH, 3, "F");
+  doc.rect(mX + 5, curY, 3, stH, "F");
 
+  // Icon
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
   doc.setTextColor(...C.white);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text(isPositive ? "!" : "✓", mX + 3, stY + stH / 2 + 2.5, { align: "center" });
+  doc.text(isPositive ? "!" : "✓", mX + 4, curY + stH / 2 + 3.5, { align: "center" });
 
-  doc.setTextColor(...STATUS);
+  // Main label
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(11.5);
+  doc.setFontSize(12.5);
+  doc.setTextColor(...STATUS);
   doc.text(
-    isPositive ? "ANOMALIE DETECTEE — TUMEUR IDENTIFIEE" : "AUCUNE TUMEUR DETECTEE",
-    mX + 11, stY + 8
+    isPositive ? "ANOMALIE DETECTEE  —  TUMEUR IDENTIFIEE" : "AUCUNE TUMEUR DETECTEE",
+    mX + 14, curY + 10
   );
+
+  // Subtitle
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...STATUS_T);
   const stSub = isPositive
-    ? `${tumorTypeFR} detectee — ${locationFR}. Consultation urgente recommandee.`
-    : "Aucune anomalie tumorale detectee dans l'IRM cerebrale. Suivi de routine conseille.";
-  doc.text(stSub, mX + 11, stY + 15.5);
+    ? `Type : ${tumorTypeFR}  ·  Localisation : ${locationFR}  ·  Consultation urgente recommandee`
+    : "Aucune lesion tumorale detectee dans l'imagerie IRM cerebrale. Suivi de routine conseille.";
+  doc.text(stSub, mX + 14, curY + 18.5);
 
-  // ════════════════════════════════════════════════════════════════════════
-  // 4. IMAGE IRM — ratio préservé, centrée horizontalement
-  // ════════════════════════════════════════════════════════════════════════
-  const imgAreaY  = stY + stH + 8;
-  const maxImgW   = tW;
-  const maxImgH   = 90;
+  curY += stH + 7;
+
+  // ── 4. IMAGE IRM ──────────────────────────────────────────────────────────
+  const maxImgW = tW;
+  const maxImgH = 88;
 
   let finalB64: string | null = null;
   let imgDrawW = maxImgW;
@@ -373,7 +469,6 @@ export const generateMedicalReport = async (data: ReportData) => {
         if (isPositive && data.boundingBox) {
           finalB64 = await composeMriWithBox(rawB64, data.boundingBox);
         }
-        // Calcule les dimensions réelles en respectant le ratio
         const dims = await computeImageDimensions(finalB64, maxImgW, maxImgH);
         imgDrawW = dims.w;
         imgDrawH = dims.h;
@@ -381,242 +476,632 @@ export const generateMedicalReport = async (data: ReportData) => {
     } catch { /* fallback */ }
   }
 
-  // Fond noir centré
   const imgX = mX + (tW - imgDrawW) / 2;
-  doc.setFillColor(4, 6, 16);
-  rr(imgX, imgAreaY, imgDrawW, imgDrawH, 3, "F");
+
+  // Blue glow border (slightly larger rect behind image)
+  doc.setFillColor(...C.blueGlow);
+  rr(imgX - 2, curY - 2, imgDrawW + 4, imgDrawH + 4, 5, "F");
+
+  // Dark background for image
+  doc.setFillColor(3, 5, 15);
+  rr(imgX, curY, imgDrawW, imgDrawH, 3, "F");
 
   if (finalB64) {
     const pad = 2;
-    doc.addImage(finalB64, "JPEG", imgX + pad, imgAreaY + pad, imgDrawW - pad * 2, imgDrawH - pad * 2, undefined, "FAST");
+    doc.addImage(finalB64, "JPEG", imgX + pad, curY + pad, imgDrawW - pad * 2, imgDrawH - pad * 2, undefined, "FAST");
   } else {
-    _noImg(doc, imgX, imgDrawW, imgAreaY, imgDrawH, C.grayMid);
+    doc.setTextColor(...C.grayMid);
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(9);
+    doc.text("Image IRM non disponible", imgX + imgDrawW / 2, curY + imgDrawH / 2, { align: "center" });
   }
 
-  const capY = imgAreaY + imgDrawH + 4;
+  const capY = curY + imgDrawH + 4;
   doc.setFont("helvetica", "italic");
   doc.setFontSize(7.5);
   doc.setTextColor(...C.grayMid);
   doc.text(
-    `Analyse NeuroScan AI  ·  ${now.toLocaleDateString("fr-FR")} ${now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`,
+    `IRM Cerebrale  ·  Analyse NeuroScan AI  ·  ${now.toLocaleDateString("fr-FR")}`,
     mX + tW / 2, capY, { align: "center" }
   );
-
-  // ════════════════════════════════════════════════════════════════════════
-  // 5. 3 CARTES MÉTRIQUES — grandes, lisibles, texte bold + wrap
-  // ════════════════════════════════════════════════════════════════════════
-  const cardGap = 5;
-  const cardW   = (tW - cardGap * 2) / 3;
-
-  // Calcule la hauteur de carte nécessaire selon le contenu
-  const cardFontSize = 13;
-  doc.setFontSize(cardFontSize);
-
-  const cardValues = [
-    `${(data.confidence ?? 0).toFixed(1)}%`,
-    tumorTypeFR,
-    locationFR,
-  ];
-  const cardLabels    = ["CONFIANCE IA", "TYPE DE TUMEUR", "LOCALISATION"];
-  const cardSubLabels = [
-    isPositive ? "Niveau de certitude diagnostique" : "Scan normal confirme",
-    isPositive ? "Lesion neoplasique detectee"       : "Aucune lesion identifiee",
-    isPositive ? "Zone cerebrale affectee"           : "N/A",
-  ];
-  const cardColors = [STATUS, isPositive ? C.red : C.green, C.blue];
-  const cardSofts  = [STATUS_S, isPositive ? C.redSoft : C.greenSoft, C.blueSoft];
-
-  // Hauteur dynamique selon nombre de lignes de la valeur
-  const cardHeights = cardValues.map((val, i) => {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(cardFontSize);
-    const lines = doc.splitTextToSize(val, cardW - 10) as string[];
-    // topBar(6) + padding(4) + lignes valeur + séparateur(4) + sublabel(5) + padding(4)
-    return 6 + 4 + lines.length * 7 + 4 + 5 + 4;
-  });
-  const cardH = Math.max(...cardHeights, 38);
-
-  const cardsY = capY + 6;
-
-  cardValues.forEach((val, i) => {
-    const cx = mX + i * (cardW + cardGap);
-
-    // Fond + bordure
-    doc.setFillColor(...cardSofts[i]);
-    doc.setDrawColor(...cardColors[i]);
-    doc.setLineWidth(0.8);
-    rr(cx, cardsY, cardW, cardH, 4, "FD");
-
-    // Barre colorée haut
-    doc.setFillColor(...cardColors[i]);
-    rr(cx, cardsY, cardW, 6, 4, "F");
-    doc.rect(cx, cardsY + 3, cardW, 3, "F");
-
-    // Label haut
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7.5);
-    doc.setTextColor(...C.white);
-    doc.text(cardLabels[i], cx + cardW / 2, cardsY + 4.5, { align: "center" });
-
-    // Valeur — bold, grande, avec wrap
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(cardFontSize);
-    doc.setTextColor(...cardColors[i]);
-    const valLines = doc.splitTextToSize(val, cardW - 10) as string[];
-    const valStartY = cardsY + 6 + 4 + 6; // top bar + padding + line height
-    valLines.forEach((line, li) => {
-      doc.text(line, cx + cardW / 2, valStartY + li * 7, { align: "center" });
-    });
-
-    // Séparateur
-    const sepY = cardsY + 6 + 4 + valLines.length * 7 + 3;
-    doc.setDrawColor(...cardColors[i]);
-    doc.setLineWidth(0.4);
-    doc.line(cx + 6, sepY, cx + cardW - 6, sepY);
-
-    // Sous-label
-    doc.setFont("helvetica", "bold");
+  if (isPositive && data.boundingBox) {
     doc.setFontSize(7);
-    doc.setTextColor(...cardColors[i]);
-    const subLines = doc.splitTextToSize(cardSubLabels[i], cardW - 10) as string[];
-    subLines.forEach((line, li) => {
-      doc.text(line, cx + cardW / 2, sepY + 4 + li * 5, { align: "center" });
-    });
-  });
-
-  // ════════════════════════════════════════════════════════════════════════
-  // 6. COMPTE RENDU — sur nouvelle page si pas assez de place
-  // ════════════════════════════════════════════════════════════════════════
-  const crFontSize = 10.5;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(crFontSize);
-  const crLines = doc.splitTextToSize(reportText, tW - 16) as string[];
-  const crLineH = 6;
-  const crTextH = crLines.length * crLineH;
-  const crBodyH = crTextH + 20 + (data.doctorName ? 14 : 0); // text + padding + médecin
-  const crTitleH = 12;
-  const recH = 22;
-  const footH = 22;
-  const totalNeeded = crTitleH + crBodyH + recH + 10;
-
-  let crY: number;
-  const afterCards = cardsY + cardH + 7;
-
-  if (afterCards + totalNeeded > H - footH) {
-    // Nouvelle page
-    crY = addPage(doc, W, C, now);
-  } else {
-    crY = afterCards;
+    doc.setTextColor(...C.redText);
+    doc.text("[ Region tumorale delimitee par le systeme d'IA ]", mX + tW / 2, capY + 5, { align: "center" });
   }
 
-  // Titre section compte rendu
-  doc.setFillColor(...C.navyMid);
-  rr(mX, crY, tW, crTitleH, 3, "F");
-  doc.rect(mX, crY + 6, tW, 6, "F");
+  curY = capY + (isPositive && data.boundingBox ? 8 : 6);
 
-  doc.setFillColor(...C.blue);
-  doc.circle(mX + 7, crY + 6, 4, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5);
-  doc.setTextColor(...C.white);
-  doc.text("IA", mX + 7, crY + 7.5, { align: "center" });
+  // ── 5. METRIC CARDS — confidence bar on first card ────────────────────────
+  const cardGap = 4;
+  const cardW   = (tW - cardGap * 2) / 3;
+  const cardH   = 44;
 
+  const cardDefs = [
+    {
+      label: "CONFIANCE IA",
+      value: `${confidencePct.toFixed(1)}%`,
+      sub:   isPositive ? "Niveau de certitude" : "Scan normal confirme",
+      color: STATUS,
+      soft:  STATUS_S,
+      bright:STATUS_B,
+      showBar: true,
+    },
+    {
+      label: "TYPE DE TUMEUR",
+      value: isPositive ? tumorTypeFR : "Aucune lesion",
+      sub:   isPositive ? "Classification IA" : "Resultat negatif",
+      color: C.blue,
+      soft:  C.blueSoft,
+      bright:C.blueGlow,
+      showBar: false,
+    },
+    {
+      label: "LOCALISATION",
+      value: isPositive ? locationFR : "N/A",
+      sub:   isPositive ? "Zone cerebrale" : "Aucune region",
+      color: C.navyMid,
+      soft:  [232, 238, 255] as RGB,
+      bright:C.navyLight,
+      showBar: false,
+    },
+  ];
+
+  cardDefs.forEach((card, i) => {
+    const cx = mX + i * (cardW + cardGap);
+
+    // Shadow
+    doc.setFillColor(185, 205, 235);
+    rr(cx + 0.7, curY + 0.7, cardW, cardH, 4, "F");
+
+    // Card
+    doc.setFillColor(...card.soft);
+    doc.setDrawColor(...card.color);
+    doc.setLineWidth(0.7);
+    rr(cx, curY, cardW, cardH, 4, "FD");
+
+    // Top strip (gradient simulation)
+    gradRect(cx, curY, cardW, 8, card.color, card.bright, 8);
+    // Round top corners mask
+    doc.setFillColor(...card.color);
+    rr(cx, curY, cardW, 4, 4, "F");
+    doc.rect(cx, curY + 4, cardW, 4, "F");
+
+    // Label
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(...C.white);
+    doc.text(card.label, cx + cardW / 2, curY + 5.8, { align: "center" });
+
+    if (card.showBar) {
+      // Large confidence value
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(17);
+      doc.setTextColor(...card.color);
+      doc.text(card.value, cx + cardW / 2, curY + 22, { align: "center" });
+
+      // Progress bar track
+      const barX  = cx + 6;
+      const barY2 = curY + 27;
+      const barW2 = cardW - 12;
+      const barH2 = 4;
+      doc.setFillColor(...C.grayBorder);
+      rr(barX, barY2, barW2, barH2, 2, "F");
+      // Filled portion
+      gradRect(barX, barY2, barW2 * (confidencePct / 100), barH2, card.color, card.bright, 8);
+
+      // Sub label
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(6.5);
+      doc.setTextColor(...card.color);
+      doc.text(card.sub, cx + cardW / 2, curY + 38.5, { align: "center" });
+
+    } else {
+      // Value text (with wrap)
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(i === 1 ? 12 : 11);
+      doc.setTextColor(...card.color);
+      const valLines = doc.splitTextToSize(card.value, cardW - 8) as string[];
+      valLines.slice(0, 2).forEach((line, li) => {
+        doc.text(line, cx + cardW / 2, curY + 21 + li * 7, { align: "center" });
+      });
+
+      // Separator
+      const sepY2 = curY + 32;
+      doc.setDrawColor(...C.grayBorder);
+      doc.setLineWidth(0.3);
+      doc.line(cx + 7, sepY2, cx + cardW - 7, sepY2);
+
+      // Sub label
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(6.5);
+      doc.setTextColor(...C.grayMid);
+      doc.text(card.sub, cx + cardW / 2, sepY2 + 6, { align: "center" });
+    }
+  });
+
+  curY += cardH + 8;
+
+  // ── 6. COMPTE RENDU ──────────────────────────────────────────────────────
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  doc.setTextColor(...C.white);
-  doc.text("Compte rendu d'analyse assistee par intelligence artificielle", mX + 15, crY + 7.5);
+  const crLines = doc.splitTextToSize(reportText, tW - 18) as string[];
+  const crLineH = 6;
+  const crBodyH = crLines.length * crLineH + 18 + (data.doctorName ? 14 : 0);
+  const crTitleH = 12;
+  const recH  = 26;
+  const footH = 22;
+  const totalNeeded = crTitleH + crBodyH + recH + 14;
 
-  // Corps
-  const crBodyY = crY + crTitleH;
+  // New page if needed
+  if (curY + totalNeeded > H - footH) {
+    stampPageNumber(pageNum++);
+    doc.addPage();
+
+    // Page 2 — mini gradient header
+    const mhH = 15;
+    gradRect(0, 0, W, mhH, C.navy, C.navyLight, 14);
+    doc.setFillColor(...C.blue);
+    doc.rect(0, mhH - 1.5, W, 1.5, "F");
+    doc.setFillColor(...C.gold);
+    doc.rect(0, mhH - 0.6, W * 0.4, 0.6, "F");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(...C.white);
+    doc.text("Neuro", mX, 10);
+    const nW2 = doc.getTextWidth("Neuro");
+    doc.setTextColor(...C.blueBright);
+    doc.text("Scan", mX + nW2, 10);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(180, 200, 235);
+    doc.text(
+      `Rapport  ·  ${data.patientName}  ·  ${now.toLocaleDateString("fr-FR")}`,
+      W - mX, 10, { align: "right" }
+    );
+
+    // Watermark (drawn before content so it appears behind)
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(54);
+    doc.setTextColor(236, 241, 253);
+    doc.text("CONFIDENTIEL", W / 2, H / 2 + 10, { align: "center", angle: 45 });
+
+    curY = mhH + 9;
+  }
+
+  // Section title — Compte Rendu
+  // Shadow
+  doc.setFillColor(175, 198, 235);
+  rr(mX + 0.6, curY + 0.6, tW, crTitleH, 3, "F");
+
+  // Gradient title bar
+  gradRect(mX, curY, tW, crTitleH, C.navyMid, C.navyLight, 12);
+  rr(mX, curY, tW, crTitleH, 3, "S");
+
+  // Gold left accent
+  doc.setFillColor(...C.gold);
+  doc.rect(mX, curY, 3.5, crTitleH, "F");
+
+  // IA badge
+  doc.setFillColor(...C.blue);
+  rr(mX + 7, curY + 2.5, 13, 7, 2, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5);
+  doc.setTextColor(...C.white);
+  doc.text("IA", mX + 13.5, curY + 7, { align: "center" });
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.setTextColor(...C.white);
+  doc.text("Compte Rendu  —  Analyse par Intelligence Artificielle", mX + 24, curY + 7.5);
+
+  // Body
+  const crBodyY = curY + crTitleH;
+
+  // Body shadow
+  doc.setFillColor(200, 215, 238);
+  rr(mX + 0.6, crBodyY + 0.6, tW, crBodyH, 3, "F");
+
   doc.setFillColor(...C.offWhite);
   doc.setDrawColor(...C.grayBorder);
   doc.setLineWidth(0.3);
   rr(mX, crBodyY, tW, crBodyH, 3, "FD");
 
-  // Barre latérale colorée
-  doc.setFillColor(...STATUS);
-  doc.rect(mX, crBodyY, 4, crBodyH, "F");
+  // Left status bar
+  gradRect(mX, crBodyY, 4, crBodyH, STATUS, STATUS_B, 12);
 
-  // Texte bold grand
+  // Gold top-right accent corner
+  doc.setFillColor(...C.gold);
+  doc.rect(mX + tW - 4, crBodyY, 4, 3.5, "F");
+
+  // Report text
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(crFontSize);
+  doc.setFontSize(10);
   doc.setTextColor(...C.grayDark);
   crLines.forEach((line, li) => {
     doc.text(line, mX + 9, crBodyY + 9 + li * crLineH);
   });
 
-  // Signature médecin
+  // Doctor signature line
   if (data.doctorName) {
-    const drSigY = crBodyY + crBodyH - 11;
+    const drSigY = crBodyY + crBodyH - 12;
     doc.setDrawColor(...C.grayBorder);
     doc.setLineWidth(0.3);
     doc.line(mX + 6, drSigY, mX + tW - 4, drSigY);
     doc.setFont("helvetica", "italic");
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setTextColor(...C.grayMid);
-    const drInfo = `Analyse etablie par : Dr. ${data.doctorName}${data.doctorSpecialty ? "  —  " + data.doctorSpecialty : ""}${data.doctorHospital ? "  —  " + data.doctorHospital : ""}`;
-    doc.text(drInfo, mX + 9, drSigY + 7);
+    const drInfo = `Etabli par : Dr. ${data.doctorName}${data.doctorSpecialty ? "  ·  " + data.doctorSpecialty : ""}${data.doctorHospital ? "  ·  " + data.doctorHospital : ""}`;
+    doc.text(drInfo, mX + 9, drSigY + 8);
   }
 
-  // ════════════════════════════════════════════════════════════════════════
-  // 7. RECOMMANDATION
-  // ════════════════════════════════════════════════════════════════════════
-  const recY = crBodyY + crBodyH + 6;
+  // ── 7. RECOMMANDATION ────────────────────────────────────────────────────
+  const recY = crBodyY + crBodyH + 7;
+
+  // Shadow
+  doc.setFillColor(215, 185, 100);
+  rr(mX + 0.6, recY + 0.6, tW, recH, 3, "F");
 
   doc.setFillColor(...C.amberSoft);
   doc.setDrawColor(...C.amberBorder);
-  doc.setLineWidth(0.5);
+  doc.setLineWidth(0.6);
   rr(mX, recY, tW, recH, 3, "FD");
-  doc.setFillColor(...C.amber);
-  rr(mX, recY, 5, recH, 2, "F");
-  doc.rect(mX, recY, 3, recH, "F");
 
-  doc.setTextColor(...C.amber);
+  doc.setFillColor(...C.amber);
+  rr(mX, recY, 7, recH, 2, "F");
+  doc.rect(mX + 4, recY, 3, recH, "F");
+
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.text("Recommandation Medicale", mX + 9, recY + 7.5);
+  doc.setFontSize(9.5);
+  doc.setTextColor(...C.amber);
+  doc.text("Recommandation Medicale", mX + 13, recY + 9);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
+  doc.setFontSize(8.5);
   doc.setTextColor(...C.grayDark);
   const recText = isPositive
     ? "Un scanner cerebral injecte et une consultation en neurochirurgie sont fortement recommandes. Ce rapport doit etre confirme par un radiologue certifie avant toute decision clinique."
     : "Un suivi IRM annuel est recommande a titre preventif. Ce rapport doit etre confirme par un medecin radiologue qualifie.";
-  doc.text(doc.splitTextToSize(recText, tW - 16), mX + 9, recY + 14);
+  const recLines = doc.splitTextToSize(recText, tW - 18) as string[];
+  recLines.forEach((line, li) => doc.text(line, mX + 13, recY + 17 + li * 5.8));
 
-  // ════════════════════════════════════════════════════════════════════════
-  // 8. FOOTER — toujours en bas de la dernière page
-  // ════════════════════════════════════════════════════════════════════════
+  // Confidence arc gauge (bottom right of recommendation box — decorative)
+  const gaugeX = mX + tW - 20;
+  const gaugeY = recY + recH / 2;
+  const gaugeR = 9;
+  drawArc(gaugeX, gaugeY, gaugeR, 180, 360, C.grayBorder, 1.8);
+  drawArc(gaugeX, gaugeY, gaugeR, 180, 180 + 180 * (confidencePct / 100), STATUS, 1.8);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5);
+  doc.setTextColor(...STATUS);
+  doc.text(`${confidencePct.toFixed(0)}%`, gaugeX, gaugeY + 1.5, { align: "center" });
+
+  // ── 8. FOOTER ─────────────────────────────────────────────────────────────
   const footY = H - footH;
 
-  doc.setFillColor(...C.navy);
-  doc.rect(0, footY, W, footH, "F");
+  // Gradient footer
+  gradRect(0, footY, W, footH, C.navy, C.navyLight, 10);
   doc.setFillColor(...C.blue);
-  doc.rect(0, footY, W, 1.5, "F");
+  doc.rect(0, footY, W, 1.8, "F");
+  doc.setFillColor(...C.gold);
+  doc.rect(0, footY + 1.8, W * 0.3, 0.8, "F");
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(7);
-  doc.setTextColor(200, 215, 240);
-  doc.text("Ce rapport est genere par un systeme d'IA a titre d'aide au diagnostic uniquement.", mX, footY + 8);
+  doc.setTextColor(200, 218, 248);
+  doc.text("Ce rapport est genere par un systeme d'IA a titre d'aide au diagnostic uniquement.", mX, footY + 8.5);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(6.5);
-  doc.setTextColor(155, 178, 220);
-  doc.text("Il ne remplace pas l'avis d'un medecin radiologue qualifie. Tout resultat doit etre confirme par un professionnel de sante habilite.", mX, footY + 14);
+  doc.setTextColor(148, 175, 222);
+  doc.text("Il ne remplace pas l'avis d'un medecin qualifie. Tout resultat doit etre confirme par un professionnel de sante habilite.", mX, footY + 14.5);
 
+  // NeuroScan wordmark in footer
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  const nW2 = doc.getTextWidth("Neuro");
-  const bX  = W - mX - nW2 - doc.getTextWidth("Scan");
+  doc.setFontSize(10.5);
+  const nsW = doc.getTextWidth("Neuro");
+  const bX  = W - mX - nsW - doc.getTextWidth("Scan");
   doc.setTextColor(...C.white);
-  doc.text("Neuro", bX, footY + 9);
+  doc.text("Neuro", bX, footY + 9.5);
   doc.setTextColor(...C.blueBright);
-  doc.text("Scan", bX + nW2, footY + 9);
+  doc.text("Scan", bX + nsW, footY + 9.5);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(6.5);
-  doc.setTextColor(155, 178, 220);
-  doc.text(`Patient ID : ${data.patientId}`, W - mX, footY + 15, { align: "right" });
+  doc.setTextColor(148, 175, 222);
+  doc.text(`ID Patient : ${data.patientId}`, W - mX, footY + 15, { align: "right" });
   doc.text(fmtDT(now), W - mX, footY + 20, { align: "right" });
 
+  stampPageNumber(pageNum);
+
   doc.save(`NeuroScan_Rapport_${data.patientId}_${Date.now()}.pdf`);
+};
+
+// ════════════════════════════════════════════════════════════════════════════
+// PDF COUPES D'INTERET — téléchargeable depuis la SlicesPage
+// ════════════════════════════════════════════════════════════════════════════
+export const generateSlicesPDF = async (
+  slices: Array<{
+    imageData: string;
+    fileName: string;
+    confidence: number;
+    tumorType?: string | null;
+    tumorLocation?: string | null;
+    boundingBox?: { x: number; y: number; width: number; height: number } | null;
+  }>,
+  patientName: string
+) => {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const W   = doc.internal.pageSize.getWidth();
+  const H   = doc.internal.pageSize.getHeight();
+  const mX  = 14;
+  const tW  = W - mX * 2;
+  const now = new Date();
+  let pageNum = 1;
+
+  const SC: Record<string, RGB> = {
+    navy:      [5,  12, 45],
+    navyLight: [28, 60, 130],
+    blue:      [37, 99, 195],
+    blueBright:[96, 165, 250],
+    gold:      [210, 165, 45],
+    goldLight: [245, 215, 130],
+    red:       [190, 28, 28],
+    redSoft:   [254, 226, 226],
+    redBright: [239, 68,  68],
+    redText:   [153, 27, 27],
+    amber:     [161, 98, 7],
+    white:     [255, 255, 255],
+    offWhite:  [246, 249, 255],
+    grayMid:   [95, 115, 145],
+    grayLight: [200, 215, 235],
+  };
+
+  const srr = (x: number, y: number, w: number, h: number, r: number, s: "F"|"S"|"FD" = "F") =>
+    doc.roundedRect(x, y, w, h, r, r, s);
+
+  const sgradRect = (x: number, y: number, w: number, h: number, from: RGB, to: RGB, steps = 24) => {
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1);
+      doc.setFillColor(
+        Math.round(from[0] + (to[0] - from[0]) * t),
+        Math.round(from[1] + (to[1] - from[1]) * t),
+        Math.round(from[2] + (to[2] - from[2]) * t),
+      );
+      doc.rect(x, y + i * (h / steps), w, h / steps + 0.5, "F");
+    }
+  };
+
+  const stampPg = (pn: number) => {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(...SC.grayMid);
+    doc.text(`— ${pn} —`, W / 2, H - 5, { align: "center" });
+  };
+
+  const drawPageHeader = (isFirst: boolean): number => {
+    const hH = isFirst ? 48 : 15;
+    sgradRect(0, 0, W, hH, SC.navy, SC.navyLight, 28);
+    doc.setFillColor(...SC.blue);
+    doc.rect(0, hH - 1.5, W, 1.5, "F");
+    doc.setFillColor(...SC.gold);
+    doc.rect(0, hH - 0.6, W * 0.4, 0.6, "F");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(isFirst ? 24 : 11);
+    doc.setTextColor(...SC.white);
+    const hy = isFirst ? 20 : 10;
+    doc.text("Neuro", mX, hy);
+    const nw = doc.getTextWidth("Neuro");
+    doc.setTextColor(...SC.blueBright);
+    doc.text("Scan", mX + nw, hy);
+
+    if (isFirst) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7);
+      doc.setTextColor(...SC.gold);
+      doc.text("INTELLIGENCE ARTIFICIELLE  ·  RAPPORT DES COUPES D'INTERET", mX, 27);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.setTextColor(...SC.white);
+      doc.text("Rapport — Coupes d'Interet", W - mX, 15, { align: "right" });
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(...SC.goldLight);
+      const fmtDT = `${now.toLocaleDateString("fr-FR")} · ${now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+      doc.text(`Genere le : ${fmtDT}`, W - mX, 23, { align: "right" });
+      doc.setTextColor(185, 210, 255);
+      doc.text(patientName || "Patient", W - mX, 31, { align: "right" });
+    } else {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7);
+      doc.setTextColor(180, 200, 235);
+      doc.text(
+        `Coupes d'Interet  ·  ${patientName}  ·  ${now.toLocaleDateString("fr-FR")}`,
+        W - mX, 10, { align: "right" }
+      );
+    }
+    return hH;
+  };
+
+  let headerH = drawPageHeader(true);
+  let curY    = headerH + 6;
+
+  // Section title bar
+  const stH = 12;
+  sgradRect(mX, curY, tW, stH, SC.red, SC.redBright, 12);
+  srr(mX, curY, tW, stH, 3, "S");
+  doc.setFillColor(...SC.red);
+  doc.rect(mX, curY, 3.5, stH, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9.5);
+  doc.setTextColor(...SC.white);
+  doc.text(
+    `Coupes d'Interet Detectees  —  ${slices.length} coupe(s) positive(s)`,
+    mX + 10, curY + 7.5
+  );
+  curY += stH + 5;
+
+  // 2-column grid
+  const cols    = 2;
+  const cellGap = 5;
+  const cellW   = (tW - cellGap) / cols;
+  const imgMaxW = cellW - 8;
+  const imgMaxH = 60;
+  const badgeH  = 12;
+  const infoH   = 22;
+  const cardH   = badgeH + imgMaxH + infoH;
+  const BOTTOM  = H - 25;
+
+  for (let idx = 0; idx < slices.length; idx++) {
+    const slice = slices[idx];
+    const col   = idx % cols;
+    const cellX = mX + col * (cellW + cellGap);
+
+    // New page when starting a new row and not enough space
+    if (col === 0 && idx > 0 && curY + cardH > BOTTOM) {
+      stampPg(pageNum++);
+      doc.addPage();
+      headerH = drawPageHeader(false);
+      curY    = headerH + 6;
+    }
+
+    // Card shadow
+    doc.setFillColor(...SC.grayLight);
+    srr(cellX + 0.7, curY + 0.7, cellW, cardH, 4, "F");
+
+    // Card background + border
+    doc.setFillColor(...SC.offWhite);
+    doc.setDrawColor(...SC.redBright);
+    doc.setLineWidth(0.5);
+    srr(cellX, curY, cellW, cardH, 4, "FD");
+
+    // ── Badge strip (dark top) ────────────────────────────────────────────
+    doc.setFillColor(3, 5, 20);
+    srr(cellX, curY, cellW, badgeH, 4, "F");
+    doc.rect(cellX, curY + badgeH - 4, cellW, 4, "F");
+
+    // Index badge
+    doc.setFillColor(...SC.red);
+    srr(cellX + 4, curY + 2.5, 14, 7, 2, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.5);
+    doc.setTextColor(...SC.white);
+    doc.text(`#${idx + 1}`, cellX + 11, curY + 7, { align: "center" });
+
+    // Confidence badge
+    const confVal = slice.confidence ?? 0;
+    const confClr: RGB = confVal >= 80 ? SC.red : confVal >= 60 ? [234, 88, 12] as RGB : SC.amber;
+    doc.setFillColor(...confClr);
+    srr(cellX + cellW - 34, curY + 2.5, 30, 7, 2, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6.5);
+    doc.setTextColor(...SC.white);
+    doc.text(`${confVal.toFixed(1)}%`, cellX + cellW - 19, curY + 7, { align: "center" });
+
+    // ── Image area ───────────────────────────────────────────────────────
+    const imgY = curY + badgeH;
+    doc.setFillColor(3, 5, 15);
+    doc.rect(cellX, imgY, cellW, imgMaxH, "F");
+
+    let b64: string | null = null;
+    try {
+      const raw = slice.imageData.startsWith("data:")
+        ? slice.imageData
+        : await loadImageAsBase64(slice.imageData);
+      if (raw) {
+        b64 = slice.boundingBox ? await composeMriWithBox(raw, slice.boundingBox) : raw;
+      }
+    } catch { /* skip */ }
+
+    if (b64) {
+      const dims = await computeImageDimensions(b64, imgMaxW, imgMaxH - 4);
+      doc.addImage(
+        b64, "JPEG",
+        cellX + (cellW  - dims.w) / 2,
+        imgY  + (imgMaxH - dims.h) / 2,
+        dims.w, dims.h, undefined, "FAST"
+      );
+    } else {
+      doc.setTextColor(...SC.grayMid);
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(7);
+      doc.text("Image non disponible", cellX + cellW / 2, imgY + imgMaxH / 2, { align: "center" });
+    }
+
+    // ── Info strip ───────────────────────────────────────────────────────
+    const infoY = imgY + imgMaxH;
+    doc.setFillColor(...SC.redSoft);
+    doc.rect(cellX, infoY, cellW, infoH, "F");
+
+    if (slice.tumorType) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.setTextColor(...SC.redText);
+      doc.text(translateTumorType(slice.tumorType), cellX + cellW / 2, infoY + 7, { align: "center" });
+    }
+    if (slice.tumorLocation) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(6.5);
+      doc.setTextColor(...SC.grayMid);
+      doc.text(
+        translateLocation(slice.tumorLocation),
+        cellX + cellW / 2, infoY + (slice.tumorType ? 13 : 9), { align: "center" }
+      );
+    }
+    if (!slice.tumorType && !slice.tumorLocation) {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(7);
+      doc.setTextColor(...SC.redText);
+      doc.text("Tumeur detectee", cellX + cellW / 2, infoY + 9, { align: "center" });
+    }
+
+    // File name
+    const fnShort = slice.fileName.length > 28 ? slice.fileName.slice(0, 26) + "…" : slice.fileName;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(5.5);
+    doc.setTextColor(...SC.grayMid);
+    doc.text(fnShort, cellX + cellW / 2, infoY + infoH - 4, { align: "center" });
+
+    // Advance Y after completing a full row or the last item
+    if (col === cols - 1 || idx === slices.length - 1) {
+      curY += cardH + 6;
+    }
+  }
+
+  // ── Footer (last page) ─────────────────────────────────────────────────
+  const footY = H - 20;
+  sgradRect(0, footY, W, 20, SC.navy, SC.navyLight, 10);
+  doc.setFillColor(...SC.blue);
+  doc.rect(0, footY, W, 1.8, "F");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  doc.setTextColor(200, 218, 248);
+  doc.text(
+    "Ce rapport est genere par un systeme d'IA a titre d'aide au diagnostic uniquement.",
+    mX, footY + 8
+  );
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.5);
+  doc.setTextColor(148, 175, 222);
+  doc.text("Il ne remplace pas l'avis d'un medecin qualifie.", mX, footY + 14);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(...SC.white);
+  const ns1 = doc.getTextWidth("Neuro");
+  const fbX = W - mX - ns1 - doc.getTextWidth("Scan");
+  doc.text("Neuro", fbX, footY + 9);
+  doc.setTextColor(...SC.blueBright);
+  doc.text("Scan", fbX + ns1, footY + 9);
+
+  stampPg(pageNum);
+
+  doc.save(
+    `NeuroScan_Coupes_${(patientName || "Patient").replace(/\s+/g, "_")}_${Date.now()}.pdf`
+  );
 };

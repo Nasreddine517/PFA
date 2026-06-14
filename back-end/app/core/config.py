@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     mongo_uri: str = Field(..., alias="MONGO_URI")
     secret_key: str = Field(..., alias="SECRET_KEY")
     algorithm: str = Field("HS256", alias="ALGORITHM")
-    token_expire_minutes: int = Field(60, alias="TOKEN_EXPIRE_MINUTES")
+    token_expire_minutes: int = Field(1440, alias="TOKEN_EXPIRE_MINUTES")
     model_provider: str = Field("yolo", alias="MODEL_PROVIDER")
     model_weights_path: str = Field("model/best.pt", alias="MODEL_WEIGHTS_PATH")
     model_confidence_threshold: float = Field(0.25, alias="MODEL_CONFIDENCE_THRESHOLD")
