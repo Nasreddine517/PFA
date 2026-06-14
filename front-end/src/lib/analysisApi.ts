@@ -9,6 +9,8 @@ export interface UploadedScan {
   uploadStatus: string;
   analysisStatus: string;
   imageUrl?: string | null;
+  previewImageData?: string | null;
+  latestAnalysisId?: string | null;
   createdAt: string;
 }
 
@@ -49,6 +51,7 @@ export interface AnalysisResult {
   reportText?: string | null;
   modelVersion?: string | null;
   positiveSlices?: PositiveSlice[];
+  previewImageData?: string | null;
   createdAt: string;
 }
 
@@ -156,7 +159,11 @@ export async function getDashboardStats(token: string): Promise<DashboardStats> 
 
 export async function uploadAndAnalyzeScan(token: string, file: File): Promise<AnalysisResult> {
   const scan = await uploadScan(token, file);
-  return createAnalysis(token, scan.id);
+  const analysis = await createAnalysis(token, scan.id);
+  if (scan.previewImageData) {
+    localStorage.setItem(`neuroscan_preview_${analysis.id}`, scan.previewImageData);
+  }
+  return { ...analysis, previewImageData: analysis.previewImageData || scan.previewImageData || null };
 }
 
 export async function uploadScanSeries(token: string, files: File[]): Promise<UploadedScan> {
@@ -173,5 +180,14 @@ export async function uploadScanSeries(token: string, files: File[]): Promise<Up
 
 export async function uploadAndAnalyzeScanSeries(token: string, files: File[]): Promise<AnalysisResult> {
   const scan = await uploadScanSeries(token, files);
-  return createAnalysis(token, scan.id);
+  // The analysis is created server-side during upload; use its ID directly to
+  // avoid a second authenticated call (which would fail if the token expired
+  // during the long inference on many images).
+  const analysis = scan.latestAnalysisId
+    ? await getAnalysisById(token, scan.latestAnalysisId)
+    : await createAnalysis(token, scan.id);
+  if (scan.previewImageData) {
+    localStorage.setItem(`neuroscan_preview_${analysis.id}`, scan.previewImageData);
+  }
+  return { ...analysis, previewImageData: analysis.previewImageData || scan.previewImageData || null };
 }

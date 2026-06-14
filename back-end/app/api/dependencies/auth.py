@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.security import decode_access_token
-from app.database.mongodb import get_database, get_user_collection_name
+from app.repositories import user_repository
 from app.schemas.auth import UserResponse
 from app.services.auth_service import build_user_response
 
@@ -36,9 +36,7 @@ async def get_current_user_document(
     if not ObjectId.is_valid(user_id):
         raise credentials_exception
 
-    database = get_database()
-    users_collection = database[get_user_collection_name()]
-    user_document = await users_collection.find_one({"_id": ObjectId(user_id)})
+    user_document = await user_repository.find_by_id(user_id)
     if user_document is None:
         raise credentials_exception
 

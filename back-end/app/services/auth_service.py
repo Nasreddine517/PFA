@@ -5,8 +5,8 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.database.mongodb import get_database, get_user_collection_name
 from app.models.user import build_user_document
+from app.repositories import user_repository
 from app.schemas.auth import (
     AuthResponse,
     LoginRequest,
@@ -35,9 +35,6 @@ def build_user_response(user_document: dict) -> UserResponse:
 
 
 async def register_user(payload: RegisterRequest) -> AuthResponse:
-    database = get_database()
-    users_collection = database[get_user_collection_name()]
-
     user_document = build_user_document(
         email=str(payload.email),
         full_name=payload.full_name,
@@ -45,11 +42,10 @@ async def register_user(payload: RegisterRequest) -> AuthResponse:
     )
 
     try:
-        insert_result = await users_collection.insert_one(user_document)
+        user_document = await user_repository.insert(user_document)
     except DuplicateKeyError as exc:
         raise EmailAlreadyRegisteredError from exc
 
-    user_document["_id"] = insert_result.inserted_id
     user = build_user_response(user_document)
     access_token = create_access_token(user.id)
 
@@ -57,10 +53,7 @@ async def register_user(payload: RegisterRequest) -> AuthResponse:
 
 
 async def login_user(payload: LoginRequest) -> AuthResponse:
-    database = get_database()
-    users_collection = database[get_user_collection_name()]
-
-    user_document = await users_collection.find_one({"email": str(payload.email)})
+    user_document = await user_repository.find_by_email(str(payload.email))
     if user_document is None:
         raise InvalidCredentialsError()
 

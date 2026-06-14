@@ -89,7 +89,7 @@ const ResultsPage = () => {
           tumor_volume: analysis.tumorVolume || null,
           bounding_box: analysis.boundingBox || null,
           report_text: analysis.reportText,
-          image_url: analysis.imageUrl || sessionStorage.getItem(`neuroscan_scan_image_${analysis.id}`) || null,
+          image_url: analysis.imageUrl || analysis.previewImageData || localStorage.getItem(`neuroscan_preview_${analysis.id}`) || sessionStorage.getItem(`neuroscan_scan_image_${analysis.id}`) || null,
           positive_slices: analysis.positiveSlices || [],
         });
       } catch (error) {
@@ -328,10 +328,10 @@ const handleDownloadPDF = () => {
             </div>
 
             <div className="relative">
-              {scan.image_url ? (
+              {(scan.image_url || scan.positive_slices[0]?.imageData) ? (
                 <div className="relative">
                   <motion.img
-                    src={scan.image_url}
+                    src={scan.image_url || scan.positive_slices[0]?.imageData}
                     alt="Brain MRI"
                     className="w-full object-cover"
                     style={{ maxHeight: "400px", objectFit: "contain" }}

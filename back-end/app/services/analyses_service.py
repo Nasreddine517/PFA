@@ -1,12 +1,8 @@
 from bson import ObjectId
 from fastapi import HTTPException, status
 
-from app.database.mongodb import (
-    get_analysis_collection_name,
-    get_database,
-    get_scan_collection_name,
-)
 from app.models.analysis import build_analysis_document
+from app.repositories import analysis_repository, scan_repository
 from app.schemas.analysis import AnalysisResponse, BoundingBoxResponse
 from app.services.inference_service import run_inference, run_inference_series
 
@@ -62,6 +58,7 @@ def build_analysis_response(
             else analysis_document.get("model_version")
         ),
         positiveSlices=analysis_document.get("positive_slices") or [],
+        previewImageData=None,
         createdAt=analysis_document["created_at"],
     )
 
@@ -71,15 +68,12 @@ async def persist_analysis_for_scan(
     doctor_id: str,
     scan_document: dict,
     file_bytes: bytes,
-) -> dict:
-    database = get_database()
-    analyses_collection = database[get_analysis_collection_name()]
-
-    existing_analysis = await analyses_collection.find_one(
-        {"scan_id": str(scan_document["_id"]), "doctor_id": doctor_id},
+) -> tuple[dict, str | None]:
+    existing_analysis = await analysis_repository.find_by_scan_and_doctor(
+        str(scan_document["_id"]), doctor_id
     )
     if existing_analysis is not None:
-        return existing_analysis
+        return existing_analysis, None
 
     inference_result = run_inference(
         file_bytes=file_bytes,
@@ -100,9 +94,8 @@ async def persist_analysis_for_scan(
         report_text=inference_result.get("report_text"),
         model_version=inference_result.get("model_version"),
     )
-    insert_result = await analyses_collection.insert_one(analysis_document)
-    analysis_document["_id"] = insert_result.inserted_id
-    return analysis_document
+    analysis_document = await analysis_repository.insert(analysis_document)
+    return analysis_document, inference_result.get("preview_image_data")
 
 
 async def persist_analysis_for_series(
@@ -110,15 +103,12 @@ async def persist_analysis_for_series(
     doctor_id: str,
     scan_document: dict,
     files: list[tuple[bytes, str, str]],
-) -> dict:
-    database = get_database()
-    analyses_collection = database[get_analysis_collection_name()]
-
-    existing_analysis = await analyses_collection.find_one(
-        {"scan_id": str(scan_document["_id"]), "doctor_id": doctor_id},
+) -> tuple[dict, str | None]:
+    existing_analysis = await analysis_repository.find_by_scan_and_doctor(
+        str(scan_document["_id"]), doctor_id
     )
     if existing_analysis is not None:
-        return existing_analysis
+        return existing_analysis, None
 
     inference_result = run_inference_series(files=files)
 
@@ -136,28 +126,19 @@ async def persist_analysis_for_series(
         model_version=inference_result.get("model_version"),
         positive_slices=inference_result.get("positive_slices"),
     )
-    insert_result = await analyses_collection.insert_one(analysis_document)
-    analysis_document["_id"] = insert_result.inserted_id
-    return analysis_document
+    analysis_document = await analysis_repository.insert(analysis_document)
+    return analysis_document, inference_result.get("preview_image_data")
 
 
 async def create_analysis(*, doctor_id: str, scan_id: str) -> AnalysisResponse:
     if not ObjectId.is_valid(scan_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scan invalide.")
 
-    database = get_database()
-    scans_collection = database[get_scan_collection_name()]
-    analyses_collection = database[get_analysis_collection_name()]
-
-    scan_document = await scans_collection.find_one(
-        {"_id": ObjectId(scan_id), "doctor_id": doctor_id},
-    )
+    scan_document = await scan_repository.find_by_id_and_doctor(scan_id, doctor_id)
     if scan_document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan introuvable.")
 
-    existing_analysis = await analyses_collection.find_one(
-        {"scan_id": scan_id, "doctor_id": doctor_id},
-    )
+    existing_analysis = await analysis_repository.find_by_scan_and_doctor(scan_id, doctor_id)
     if existing_analysis is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -171,18 +152,12 @@ async def get_analysis(*, doctor_id: str, analysis_id: str) -> AnalysisResponse:
     if not ObjectId.is_valid(analysis_id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Analyse invalide.")
 
-    database = get_database()
-    scans_collection = database[get_scan_collection_name()]
-    analyses_collection = database[get_analysis_collection_name()]
-
-    analysis_document = await analyses_collection.find_one(
-        {"_id": ObjectId(analysis_id), "doctor_id": doctor_id},
-    )
+    analysis_document = await analysis_repository.find_by_id_and_doctor(analysis_id, doctor_id)
     if analysis_document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analyse introuvable.")
 
-    scan_document = await scans_collection.find_one(
-        {"_id": ObjectId(analysis_document["scan_id"]), "doctor_id": doctor_id},
+    scan_document = await scan_repository.find_by_id_and_doctor(
+        analysis_document["scan_id"], doctor_id
     )
     if scan_document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan introuvable.")

@@ -5,6 +5,7 @@ from app.schemas.analysis import ScanUploadResponse
 from app.services.inference_service import InferenceInputError, ModelConfigurationError
 from app.services.scans_service import (
     InvalidScanFileError,
+    MAX_SERIES_FILES,
     ScanTooLargeError,
     SeriesTooManyFilesError,
     create_scan,
@@ -86,7 +87,7 @@ async def upload_scan_series(
     except SeriesTooManyFilesError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"La serie contient trop de fichiers (maximum {500} slices).",
+            detail=f"La serie contient trop de fichiers (maximum {MAX_SERIES_FILES} slices).",
         ) from exc
     except InvalidScanFileError as exc:
         raise HTTPException(
@@ -101,7 +102,7 @@ async def upload_scan_series(
     except InferenceInputError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Le modele IA n'a pas pu traiter la serie DICOM.",
+            detail=f"Le modele IA n'a pas pu traiter la serie DICOM: {exc}",
         ) from exc
     except ModelConfigurationError as exc:
         raise HTTPException(

@@ -20,6 +20,8 @@ class ScanUploadResponse(BaseModel):
     upload_status: str = Field(..., alias="uploadStatus")
     analysis_status: str = Field(..., alias="analysisStatus")
     image_url: str | None = Field(None, alias="imageUrl")
+    preview_image_data: str | None = Field(None, alias="previewImageData")
+    latest_analysis_id: str | None = Field(None, alias="latestAnalysisId")
     created_at: datetime = Field(..., alias="createdAt")
 
     model_config = ConfigDict(populate_by_name=True)
@@ -63,6 +65,7 @@ class AnalysisResponse(BaseModel):
     report_text: str | None = Field(None, alias="reportText")
     model_version: str | None = Field(None, alias="modelVersion")
     positive_slices: list[PositiveSliceResponse] = Field(default_factory=list, alias="positiveSlices")
+    preview_image_data: str | None = Field(None, alias="previewImageData")
     created_at: datetime = Field(..., alias="createdAt")
 
     model_config = ConfigDict(populate_by_name=True)

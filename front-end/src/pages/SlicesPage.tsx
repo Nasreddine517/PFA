@@ -1,12 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   ArrowLeft, AlertTriangle, MapPin, FileText,
-  Layers, Activity, Brain,
+  Layers, Activity, Brain, Download, Loader2,
 } from "lucide-react";
 import { PositiveSlice } from "@/lib/analysisApi";
 import { useTheme } from "@/contexts/ThemeContext";
+import { generateSlicesPDF } from "@/lib/generatePDF";
 
 interface SlicesState {
   slices: PositiveSlice[];
@@ -23,6 +24,16 @@ const SlicesPage = () => {
   const slices      = state.slices      || [];
   const patientName = state.patientName || "";
   const resultsId   = state.resultsId   || "";
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  const handleDownloadPDF = async () => {
+    setPdfLoading(true);
+    try {
+      await generateSlicesPDF(slices, patientName);
+    } finally {
+      setPdfLoading(false);
+    }
+  };
 
   // Si on arrive sans données, on renvoie aux résultats
   useEffect(() => {
@@ -81,6 +92,29 @@ const SlicesPage = () => {
               )}
             </p>
           </div>
+
+          {/* Download PDF button */}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleDownloadPDF}
+            disabled={pdfLoading}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium
+                       border transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+            style={{
+              background: "linear-gradient(135deg, rgba(239,68,68,0.18), rgba(239,68,68,0.06))",
+              border: "1px solid rgba(239,68,68,0.4)",
+              color: "#f87171",
+            }}
+          >
+            {pdfLoading
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Download className="w-4 h-4" />
+            }
+            <span className="hidden sm:inline">
+              {lang === "fr" ? "Télécharger PDF" : "Download PDF"}
+            </span>
+          </motion.button>
 
           {/* Brain icon accent */}
           <div

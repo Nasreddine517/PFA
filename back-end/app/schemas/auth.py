@@ -1,3 +1,5 @@
+import re
+
 from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
@@ -17,7 +19,6 @@ class RegisterRequest(BaseModel):
         candidate = value.strip()
         if not candidate:
             raise ValueError("Le nom complet est obligatoire.")
-        import re
         if not re.match(DOCTOR_NAME_PATTERN, candidate):
             raise ValueError("Le nom doit respecter le format Dr.NomComplet.")
         return candidate
