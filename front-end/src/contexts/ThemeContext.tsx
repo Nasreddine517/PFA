@@ -52,7 +52,7 @@ const translations: Record<string, Record<string, string>> = {
   "up.realtimeDesc": { fr: "Résultats en moins de 30 secondes", en: "Results in under 30 seconds" },
   "up.hipaa": { fr: "Sécurisé HIPAA", en: "HIPAA Secure" },
   "up.hipaaDesc": { fr: "Données chiffrées de bout en bout", en: "End-to-end encrypted data" },
-  "up.accuracy": { fr: "99,2% de Précision", en: "99.2% Accuracy" },
+  "up.accuracy": { fr: "89,5% de Précision", en: "89.5% Accuracy" },
   "up.accuracyDesc": { fr: "Précision de qualité clinique", en: "Clinical-grade precision" },
   "up.step1": { fr: "Infos Patient", en: "Patient Info" },
   "up.step2": { fr: "Symptômes", en: "Symptoms" },
