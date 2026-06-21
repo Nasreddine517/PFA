@@ -128,9 +128,9 @@ const HeroSection = () => {
   const { lang, theme } = useTheme();
 
   const stats = [
-    { value: "99.2%", label: lang === "fr" ? "Précision de Détection" : "Detection Accuracy" },
+    { value: "89.5%", label: lang === "fr" ? "Précision de Détection" : "Detection Accuracy" },
     { value: "<30s",  label: lang === "fr" ? "Temps d'Analyse"        : "Analysis Time"       },
-    { value: "50K+",  label: lang === "fr" ? "Scans Analysés"         : "Scans Analyzed"      },
+    { value: "1K+",   label: lang === "fr" ? "Scans Analysés"         : "Scans Analyzed"      },
   ];
 
   const pills = [
