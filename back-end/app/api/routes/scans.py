@@ -10,6 +10,7 @@ from app.services.scans_service import (
     SeriesTooManyFilesError,
     create_scan,
     create_scan_series,
+    create_full_exam_scan,
 )
 
 router = APIRouter()
@@ -103,6 +104,68 @@ async def upload_scan_series(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Le modele IA n'a pas pu traiter la serie DICOM: {exc}",
+        ) from exc
+    except ModelConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Le modele IA n'est pas correctement configure sur le serveur.",
+        ) from exc
+
+
+@router.post(
+    "/upload-exam",
+    response_model=ScanUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload a complete MRI exam (multiple mixed series)",
+)
+async def upload_full_exam(
+    files: list[UploadFile] = File(...),
+    current_user_document: dict = Depends(get_current_user_document),
+) -> ScanUploadResponse:
+    """Accept all DICOM files from a full MRI exam (possibly multiple series).
+
+    The backend automatically groups files by SeriesInstanceUID, analyses each
+    series independently with the YOLO model, then aggregates the per-series
+    results using a weighted confidence vote to produce the final diagnosis.
+    """
+    if not files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Aucun fichier fourni.",
+        )
+    try:
+        file_tuples: list[tuple[bytes, str, str]] = []
+        for upload_file in files:
+            file_bytes = await upload_file.read()
+            file_tuples.append((
+                file_bytes,
+                upload_file.filename or "slice.dcm",
+                upload_file.content_type or "application/dicom",
+            ))
+
+        return await create_full_exam_scan(
+            doctor_id=str(current_user_document["_id"]),
+            files=file_tuples,
+        )
+    except SeriesTooManyFilesError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"L'examen contient trop de fichiers (maximum {MAX_SERIES_FILES}).",
+        ) from exc
+    except InvalidScanFileError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Les fichiers doivent etre au format DICOM (.dcm), PNG ou JPEG.",
+        ) from exc
+    except ScanTooLargeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="L'examen IRM depasse la taille maximale autorisee.",
+        ) from exc
+    except InferenceInputError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Le modele IA n'a pas pu traiter l'examen: {exc}",
         ) from exc
     except ModelConfigurationError as exc:
         raise HTTPException(

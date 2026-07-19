@@ -1,10 +1,13 @@
+import asyncio
+from functools import partial
+
 from bson import ObjectId
 from fastapi import HTTPException, status
 
 from app.models.analysis import build_analysis_document
 from app.repositories import analysis_repository, scan_repository
 from app.schemas.analysis import AnalysisResponse, BoundingBoxResponse
-from app.services.inference_service import run_inference, run_inference_series
+from app.services.inference_service import run_inference, run_inference_series, run_inference_full_exam
 
 
 def build_analysis_response(
@@ -75,10 +78,15 @@ async def persist_analysis_for_scan(
     if existing_analysis is not None:
         return existing_analysis, None
 
-    inference_result = run_inference(
-        file_bytes=file_bytes,
-        file_name=scan_document["file_name"],
-        file_type=scan_document["file_type"],
+    loop = asyncio.get_event_loop()
+    inference_result = await loop.run_in_executor(
+        None,
+        partial(
+            run_inference,
+            file_bytes=file_bytes,
+            file_name=scan_document["file_name"],
+            file_type=scan_document["file_type"],
+        ),
     )
 
     analysis_document = build_analysis_document(
@@ -110,7 +118,47 @@ async def persist_analysis_for_series(
     if existing_analysis is not None:
         return existing_analysis, None
 
-    inference_result = run_inference_series(files=files)
+    loop = asyncio.get_event_loop()
+    inference_result = await loop.run_in_executor(
+        None,
+        partial(run_inference_series, files=files),
+    )
+
+    analysis_document = build_analysis_document(
+        doctor_id=doctor_id,
+        scan_id=str(scan_document["_id"]),
+        result=inference_result["result"],
+        confidence=inference_result["confidence"],
+        tumor_detected=inference_result.get("tumor_detected"),
+        tumor_type=inference_result.get("tumor_type"),
+        tumor_location=inference_result.get("tumor_location"),
+        tumor_volume=inference_result.get("tumor_volume"),
+        bounding_box=inference_result.get("bounding_box"),
+        report_text=inference_result.get("report_text"),
+        model_version=inference_result.get("model_version"),
+        positive_slices=inference_result.get("positive_slices"),
+    )
+    analysis_document = await analysis_repository.insert(analysis_document)
+    return analysis_document, inference_result.get("preview_image_data")
+
+
+async def persist_analysis_for_full_exam(
+    *,
+    doctor_id: str,
+    scan_document: dict,
+    files: list[tuple[bytes, str, str]],
+) -> tuple[dict, str | None]:
+    existing_analysis = await analysis_repository.find_by_scan_and_doctor(
+        str(scan_document["_id"]), doctor_id
+    )
+    if existing_analysis is not None:
+        return existing_analysis, None
+
+    loop = asyncio.get_event_loop()
+    inference_result = await loop.run_in_executor(
+        None,
+        partial(run_inference_full_exam, files=files),
+    )
 
     analysis_document = build_analysis_document(
         doctor_id=doctor_id,

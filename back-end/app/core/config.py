@@ -8,8 +8,8 @@ class Settings(BaseSettings):
     app_name: str = "NeuroScan API"
     api_v1_prefix: str = "/api"
     mongo_db_name: str = "neuroscan"
-    mongo_uri: str = Field(..., alias="MONGO_URI")
-    secret_key: str = Field(..., alias="SECRET_KEY")
+    mongo_uri: str = Field("mongodb://127.0.0.1:27017/neuroscan", alias="MONGO_URI")
+    secret_key: str = Field("dev-secret-key-change-me", alias="SECRET_KEY")
     algorithm: str = Field("HS256", alias="ALGORITHM")
     token_expire_minutes: int = Field(1440, alias="TOKEN_EXPIRE_MINUTES")
     model_provider: str = Field("yolo", alias="MODEL_PROVIDER")

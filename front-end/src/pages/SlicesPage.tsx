@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-  ArrowLeft, AlertTriangle, MapPin, FileText,
+  ArrowLeft, AlertTriangle, MapPin, FileText, Target,
   Layers, Activity, Brain, Download, Loader2,
 } from "lucide-react";
 import { PositiveSlice } from "@/lib/analysisApi";
@@ -193,7 +193,9 @@ const SlicesPage = () => {
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-foreground">
-                      {lang === "fr" ? "Coupe" : "Slice"} #{idx + 1}
+                      {slice.slicePosition
+                        ? `${lang === "fr" ? "Coupe" : "Slice"} ${slice.slicePosition}`
+                        : `${lang === "fr" ? "Coupe" : "Slice"} #${idx + 1}`}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {lang === "fr" ? "Tumeur détectée" : "Tumor detected"}
@@ -274,7 +276,7 @@ const SlicesPage = () => {
                     backdropFilter: "blur(6px)",
                   }}
                 >
-                  #{String(idx + 1).padStart(2, "0")}
+                  {slice.slicePosition ?? `#${String(idx + 1).padStart(2, "0")}`}
                 </div>
 
                 {/* Top-right: confidence */}
@@ -335,7 +337,7 @@ const SlicesPage = () => {
 
               {/* ── Meta info ────────────────────────────────────── */}
               <div
-                className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x border-t"
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x border-t"
                 style={{
                   borderColor: "rgba(239,68,68,0.1)",
                   divideColor: "rgba(239,68,68,0.1)",
@@ -404,6 +406,36 @@ const SlicesPage = () => {
                     >
                       {slice.fileName}
                     </p>
+                  </div>
+                </div>
+
+                {/* Bounding box coordinates */}
+                <div className="flex items-start gap-3 px-5 py-4">
+                  <div
+                    className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+                    style={{
+                      background: "rgba(239,68,68,0.10)",
+                      border: "1px solid rgba(239,68,68,0.22)",
+                    }}
+                  >
+                    <Target className="w-3.5 h-3.5 text-red-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground mb-0.5">
+                      {lang === "fr" ? "Boîte englobante" : "Bounding box"}
+                    </p>
+                    {slice.boundingBox ? (
+                      <p className="text-xs font-mono text-foreground/80 leading-relaxed">
+                        x {(slice.boundingBox.x * 100).toFixed(1)}% 
+                        y {(slice.boundingBox.y * 100).toFixed(1)}%<br />
+                        w {(slice.boundingBox.width * 100).toFixed(1)}% 
+                        h {(slice.boundingBox.height * 100).toFixed(1)}%
+                      </p>
+                    ) : (
+                      <p className="text-xs text-foreground/40 italic">
+                        {lang === "fr" ? "Modèle de classification" : "Classification model"}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

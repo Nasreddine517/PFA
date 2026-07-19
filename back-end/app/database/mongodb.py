@@ -1,4 +1,3 @@
-import certifi
 from pymongo import ASCENDING
 from pymongo.errors import PyMongoError
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
@@ -19,7 +18,6 @@ async def connect_to_mongo() -> None:
     try:
         client = AsyncIOMotorClient(
             settings.mongo_uri,
-            tlsCAFile=certifi.where(),
             serverSelectionTimeoutMS=5000,
             connectTimeoutMS=5000,
             socketTimeoutMS=5000,
