@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { uploadAndAnalyzeScan, uploadAndAnalyzeScanSeries } from "@/lib/analysisApi";
+import { uploadAndAnalyzeScan, uploadAndAnalyzeScanSeries, uploadAndAnalyzeFullExam } from "@/lib/analysisApi";
 import { toast } from "sonner";
 
 const LATEST_ANALYSIS_STORAGE_KEY = "neuroscan_latest_analysis_id";
@@ -77,7 +77,7 @@ const UploadPage = () => {
   const [progress, setProgress] = useState(0);
   const [activeStep, setActiveStep] = useState(0);
   const [hoveredSymptom, setHoveredSymptom] = useState<string | null>(null);
-  const [uploadMode, setUploadMode] = useState<"single" | "series">("single");
+  const [uploadMode, setUploadMode] = useState<"single" | "series" | "exam">("single");
   const [dicomSeries, setDicomSeries] = useState<File[] | null>(null);
 
   // CSS calendrier — adapté light/dark
@@ -232,8 +232,11 @@ const UploadPage = () => {
 
   const isDicom = (f: File) => {
     const name = f.name.toLowerCase();
-    if (name.endsWith(".dcm") || name.endsWith(".dicom")) return true;
+    const knownExtensions = [".dcm", ".dicom", ".jpeg", ".jpg", ".png"];
+    if (knownExtensions.some((ext) => name.endsWith(ext))) return true;
     if (f.type === "application/dicom" || f.type === "application/dicom+json") return true;
+    const segments = name.split(".").filter(Boolean);
+    if (segments.length >= 3 && segments.every((segment) => /^\d+$/.test(segment))) return true;
     // DICOM files often have no extension (e.g. IMG00001)
     if (!name.includes(".") && !f.type.startsWith("image/")) return true;
     return false;
@@ -264,9 +267,9 @@ const UploadPage = () => {
   };
 
   const handleAnalyze = async () => {
-    const hasInput = uploadMode === "series"
-      ? !!(dicomSeries && dicomSeries.length > 0)
-      : !!file;
+    const hasInput = uploadMode === "single"
+      ? !!file
+      : !!(dicomSeries && dicomSeries.length > 0);
     if (!hasInput || !user || !patientName || !session?.accessToken) {
       toast.error(lang === "fr" ? "Veuillez renseigner le nom du patient et téléverser un scan." : "Please fill in patient name and upload a scan.");
       return;
@@ -276,23 +279,31 @@ const UploadPage = () => {
     setProgress(0);
     setActiveStep(0);
 
+    // Series/exam (40+ sampled slices) takes ~2 min — slow the bar so it doesn't stall at 90%
+    const isMultiFile = uploadMode === "series" || uploadMode === "exam";
     const interval = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 90) { clearInterval(interval); return 90; }
-        return prev + Math.random() * 8;
+        return prev + (isMultiFile ? Math.random() * 2 : Math.random() * 8);
       });
-    }, 400);
+    }, isMultiFile ? 1200 : 400);
 
     try {
-      const analysis = uploadMode === "series"
-        ? await uploadAndAnalyzeScanSeries(session.accessToken, dicomSeries!)
-        : await uploadAndAnalyzeScan(session.accessToken, file!);
+      const token = session?.accessToken;
+      if (!token) {
+        throw new Error(lang === "fr" ? "Session expirée. Veuillez vous reconnecter." : "Session expired. Please sign in again.");
+      }
+      const analysis = uploadMode === "exam"
+        ? await uploadAndAnalyzeFullExam(token, dicomSeries!)
+        : uploadMode === "series"
+          ? await uploadAndAnalyzeScanSeries(token, dicomSeries!)
+          : await uploadAndAnalyzeScan(token, file!);
       sessionStorage.setItem(LATEST_ANALYSIS_STORAGE_KEY, analysis.id);
 
       if (uploadMode === "single" && preview && preview !== "__dicom__") {
         // PNG/JPG — preview is already a data URL
         sessionStorage.setItem(`neuroscan_scan_image_${analysis.id}`, preview);
-      } else if (uploadMode === "series" && dicomSeries) {
+      } else if ((uploadMode === "series" || uploadMode === "exam") && dicomSeries) {
         // Series — find the first PNG/JPG file and read it as a data URL
         const firstImage = dicomSeries.find((f) => f.type.startsWith("image/"));
         if (firstImage) {
@@ -862,11 +873,18 @@ const UploadPage = () => {
                         className={`flex-1 px-4 py-2.5 text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${uploadMode === "series" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}
                       >
                         <FolderOpen className="w-4 h-4" />
-                        {lang === "fr" ? "Plusieurs images" : "Multiple images"}
+                        {lang === "fr" ? "Série unique" : "Single series"}
+                      </button>
+                      <button
+                        onClick={() => { setUploadMode("exam"); setFile(null); setPreview(null); }}
+                        className={`flex-1 px-4 py-2.5 text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${uploadMode === "exam" ? "bg-primary text-primary-foreground" : "bg-transparent text-muted-foreground hover:text-foreground"}`}
+                      >
+                        <Brain className="w-4 h-4" />
+                        {lang === "fr" ? "Examen complet" : "Full exam"}
                       </button>
                     </div>
 
-                    {uploadMode === "series" ? (
+                    {uploadMode === "series" || uploadMode === "exam" ? (
                       /* ── Series picker ── */
                       <div>
                         {dicomSeries && dicomSeries.length > 0 ? (
@@ -879,7 +897,9 @@ const UploadPage = () => {
                                 {lang === "fr" ? `${dicomSeries.length} image(s) sélectionnée(s)` : `${dicomSeries.length} image(s) selected`}
                               </p>
                               <p className="text-xs text-muted-foreground">
-                                {lang === "fr" ? "Série prête pour l'analyse IA image par image" : "Series ready for AI analysis (image by image)"}
+                                {uploadMode === "exam"
+                                  ? (lang === "fr" ? "Examen complet — groupement automatique par série" : "Full exam — automatic series grouping")
+                                  : (lang === "fr" ? "Série prête pour l'analyse IA image par image" : "Series ready for AI analysis (image by image)")}
                               </p>
                             </div>
                             <motion.button
@@ -918,16 +938,10 @@ const UploadPage = () => {
                                 onChange={(e) => {
                                   const fileList = e.target.files;
                                   if (fileList && fileList.length > 0) {
-                                    const validFiles = Array.from(fileList).filter(
-                                      (f) => {
-                                        const name = f.name.toLowerCase();
-                                        if (f.type.startsWith("image/")) return true;
-                                        if (name.endsWith(".dcm") || name.endsWith(".dicom")) return true;
-                                        // DICOM files without extension (e.g. IMG00001)
-                                        if (!name.includes(".") && !f.type.startsWith("image/")) return true;
-                                        return false;
-                                      }
-                                    );
+                                    const validFiles = Array.from(fileList).filter((f) => {
+                                      if (f.type.startsWith("image/")) return true;
+                                      return isDicom(f);
+                                    });
                                     if (validFiles.length > 0) setDicomSeries(validFiles);
                                   }
                                 }}
@@ -1007,6 +1021,7 @@ const UploadPage = () => {
                     <div className="flex items-center justify-between pt-2 border-t border-border">
                       <button onClick={() => setStep(2)} className="text-sm text-muted-foreground hover:text-foreground transition-colors">{t("up.back")}</button>
                       {(uploadMode === "single" ? !!file : !!(dicomSeries && dicomSeries.length > 0)) && (
+
                         <motion.button initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} onClick={handleAnalyze} whileHover={{ scale: 1.05, boxShadow: "0 0 50px rgba(59,130,246,0.3)" }} whileTap={{ scale: 0.95 }} className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm text-primary-foreground" style={{ backgroundImage: "linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)))" }}>
                           <motion.div animate={{ rotate: [0, 360] }} transition={{ duration: 3, repeat: Infinity, ease: "linear" }}><Sparkles className="w-4 h-4" /></motion.div>
                           {t("up.startAnalysis")} <ArrowRight className="w-4 h-4" />
@@ -1036,6 +1051,17 @@ const UploadPage = () => {
                           {lang === "fr" ? <>Analyse du <span className="text-accent">Scan IRM</span></> : <>Analyzing <span className="text-accent">MRI Scan</span></>}
                         </h3>
                         <p className="text-sm text-muted-foreground">{t("up.analyzingDesc")}</p>
+                        {(uploadMode === "series" || uploadMode === "exam") && dicomSeries && dicomSeries.length > 0 && (
+                          <p className="text-xs text-amber-500 mt-2">
+                            {uploadMode === "exam"
+                              ? (lang === "fr"
+                                  ? `Examen complet — ${dicomSeries.length} images — groupement automatique par série, puis agrégation IA.`
+                                  : `Full exam — ${dicomSeries.length} images — automatic series grouping, then AI aggregation.`)
+                              : (lang === "fr"
+                                  ? `Série de ${dicomSeries.length} images — le traitement peut prendre plusieurs minutes.`
+                                  : `Series of ${dicomSeries.length} images — processing may take several minutes.`)}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="p-8">

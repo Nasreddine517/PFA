@@ -45,6 +45,7 @@ class PositiveSliceResponse(BaseModel):
     tumor_type: str | None = Field(None, alias="tumorType")
     tumor_location: str | None = Field(None, alias="tumorLocation")
     bounding_box: BoundingBoxResponse | None = Field(None, alias="boundingBox")
+    slice_position: str | None = Field(None, alias="slicePosition")
 
     model_config = ConfigDict(populate_by_name=True)
 

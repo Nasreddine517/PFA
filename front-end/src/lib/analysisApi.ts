@@ -20,6 +20,7 @@ export interface PositiveSlice {
   confidence: number;
   tumorType?: string | null;
   tumorLocation?: string | null;
+  slicePosition?: string | null;
   boundingBox?: {
     x: number;
     y: number;
@@ -80,6 +81,7 @@ async function apiRequest<T>(path: string, init: RequestInit): Promise<T> {
   if (!response.ok) {
     const message =
       (typeof responseData === "object" && responseData !== null && "detail" in responseData && typeof responseData.detail === "string" && responseData.detail) ||
+      (typeof responseData === "object" && responseData !== null && "message" in responseData && typeof responseData.message === "string" && responseData.message) ||
       "Une erreur est survenue.";
     throw new Error(message);
   }
@@ -161,7 +163,11 @@ export async function uploadAndAnalyzeScan(token: string, file: File): Promise<A
   const scan = await uploadScan(token, file);
   const analysis = await createAnalysis(token, scan.id);
   if (scan.previewImageData) {
-    localStorage.setItem(`neuroscan_preview_${analysis.id}`, scan.previewImageData);
+    try {
+      localStorage.setItem(`neuroscan_preview_${analysis.id}`, scan.previewImageData);
+    } catch {
+      // localStorage quota exceeded — preview available via analysis.previewImageData
+    }
   }
   return { ...analysis, previewImageData: analysis.previewImageData || scan.previewImageData || null };
 }
@@ -187,7 +193,38 @@ export async function uploadAndAnalyzeScanSeries(token: string, files: File[]): 
     ? await getAnalysisById(token, scan.latestAnalysisId)
     : await createAnalysis(token, scan.id);
   if (scan.previewImageData) {
-    localStorage.setItem(`neuroscan_preview_${analysis.id}`, scan.previewImageData);
+    try {
+      localStorage.setItem(`neuroscan_preview_${analysis.id}`, scan.previewImageData);
+    } catch {
+      // localStorage quota exceeded — preview available via analysis.previewImageData
+    }
+  }
+  return { ...analysis, previewImageData: analysis.previewImageData || scan.previewImageData || null };
+}
+
+export async function uploadFullExam(token: string, files: File[]): Promise<UploadedScan> {
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("files", file);
+  }
+  return apiRequest<UploadedScan>("/scans/upload-exam", {
+    method: "POST",
+    headers: withAuth(token),
+    body: formData,
+  });
+}
+
+export async function uploadAndAnalyzeFullExam(token: string, files: File[]): Promise<AnalysisResult> {
+  const scan = await uploadFullExam(token, files);
+  const analysis = scan.latestAnalysisId
+    ? await getAnalysisById(token, scan.latestAnalysisId)
+    : await createAnalysis(token, scan.id);
+  if (scan.previewImageData) {
+    try {
+      localStorage.setItem(`neuroscan_preview_${analysis.id}`, scan.previewImageData);
+    } catch {
+      // localStorage quota exceeded
+    }
   }
   return { ...analysis, previewImageData: analysis.previewImageData || scan.previewImageData || null };
 }

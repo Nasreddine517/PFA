@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -7,10 +8,15 @@ from app.api.routes import api_router
 from app.core.config import settings
 from app.database.mongodb import close_mongo_connection, connect_to_mongo
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await connect_to_mongo()
+    try:
+        await connect_to_mongo()
+    except Exception as exc:  # pragma: no cover - depends on runtime environment
+        logger.warning("MongoDB unavailable at startup; continuing with the API available: %s", exc)
     try:
         yield
     finally:
