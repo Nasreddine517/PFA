@@ -8,14 +8,11 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AppLayout from "@/components/AppLayout";
 import Index from "./pages/Index";
-import Dashboard from "./pages/Dashboard";
 import UploadPage from "./pages/UploadPage";
 import ResultsPage from "./pages/ResultsPage";
 import Auth from "./pages/Auth";
 import ProfileSettings from "./pages/ProfileSettings";
 import NotFound from "./pages/NotFound";
-import MedicalLibrary from "./pages/MedicalLibrary";
-import SlicesPage from "./pages/SlicesPage";
 
 const queryClient = new QueryClient();
 
@@ -36,13 +33,10 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
-              <Route path="/dashboard" element={<ProtectedWithSidebar><Dashboard /></ProtectedWithSidebar>} />
               <Route path="/upload" element={<ProtectedWithSidebar><UploadPage /></ProtectedWithSidebar>} />
               <Route path="/results" element={<ProtectedWithSidebar><ResultsPage /></ProtectedWithSidebar>} />
               <Route path="/results/:id" element={<ProtectedWithSidebar><ResultsPage /></ProtectedWithSidebar>} />
               <Route path="/profile" element={<ProtectedWithSidebar><ProfileSettings /></ProtectedWithSidebar>} />
-              <Route path="/library" element={<ProtectedWithSidebar><MedicalLibrary /></ProtectedWithSidebar>} />
-              <Route path="/slices" element={<ProtectedWithSidebar><SlicesPage /></ProtectedWithSidebar>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>

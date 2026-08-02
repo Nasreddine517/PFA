@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     token_expire_minutes: int = Field(1440, alias="TOKEN_EXPIRE_MINUTES")
     model_provider: str = Field("yolo", alias="MODEL_PROVIDER")
     model_weights_path: str = Field("model/best.pt", alias="MODEL_WEIGHTS_PATH")
-    model_confidence_threshold: float = Field(0.25, alias="MODEL_CONFIDENCE_THRESHOLD")
+    model_confidence_threshold: float = Field(0.20, alias="MODEL_CONFIDENCE_THRESHOLD")
+    efficientnet_weights_path: str = Field("model/best_model_final.keras", alias="EFFICIENTNET_WEIGHTS_PATH")
+    efficientnet_threshold: float = Field(0.25, alias="EFFICIENTNET_THRESHOLD")
     max_upload_size_mb: int = Field(15, alias="MAX_UPLOAD_SIZE_MB")
     allowed_origins: list[str] = Field(
         default_factory=lambda: [

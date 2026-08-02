@@ -1,4 +1,4 @@
-import { Brain, BarChart3, Home, LogOut, Scan, BookOpen } from "lucide-react";
+import { Brain, Home, LogOut, Scan } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -26,10 +26,8 @@ export function AppSidebar() {
   });
 
   const navItems = [
-    { title: t("sidebar.home"),      url: "/",          icon: Home      },
-    { title: t("sidebar.analyze"),   url: "/upload",    icon: Scan      },
-    { title: t("sidebar.dashboard"), url: "/dashboard", icon: BarChart3 },
-    { title: lang === "fr" ? "Bibliothèque" : "Medical Library", url: "/library", icon: BookOpen },
+    { title: t("sidebar.home"),    url: "/",       icon: Home },
+    { title: t("sidebar.analyze"), url: "/upload", icon: Scan },
   ];
 
   useEffect(() => {

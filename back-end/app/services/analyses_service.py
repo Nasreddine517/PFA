@@ -62,6 +62,8 @@ def build_analysis_response(
         ),
         positiveSlices=analysis_document.get("positive_slices") or [],
         previewImageData=None,
+        isFullExam=bool(analysis_document.get("is_full_exam", False)),
+        examSeries=analysis_document.get("exam_series") or None,
         createdAt=analysis_document["created_at"],
     )
 
@@ -137,6 +139,8 @@ async def persist_analysis_for_series(
         report_text=inference_result.get("report_text"),
         model_version=inference_result.get("model_version"),
         positive_slices=inference_result.get("positive_slices"),
+        is_full_exam=inference_result.get("is_full_exam", False),
+        exam_series=inference_result.get("exam_series"),
     )
     analysis_document = await analysis_repository.insert(analysis_document)
     return analysis_document, inference_result.get("preview_image_data")
@@ -173,6 +177,8 @@ async def persist_analysis_for_full_exam(
         report_text=inference_result.get("report_text"),
         model_version=inference_result.get("model_version"),
         positive_slices=inference_result.get("positive_slices"),
+        is_full_exam=inference_result.get("is_full_exam", False),
+        exam_series=inference_result.get("exam_series"),
     )
     analysis_document = await analysis_repository.insert(analysis_document)
     return analysis_document, inference_result.get("preview_image_data")

@@ -66,6 +66,8 @@ const UploadPage = () => {
   const [step, setStep] = useState(1);
   const [patientName, setPatientName] = useState("");
   const [patientId, setPatientId] = useState("");
+  const [patientSex, setPatientSex] = useState<"M" | "F" | "Autre" | "">("" );
+  const [patientAge, setPatientAge] = useState("");
   const [scanDate, setScanDate] = useState("");
   const [scanDateObj, setScanDateObj] = useState<Date | undefined>(undefined);
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -320,7 +322,7 @@ const UploadPage = () => {
       setProgress(100);
       setTimeout(() => {
         navigate(`/results/${analysis.id}`, {
-          state: { patientName, patientId, scanDate, symptoms: selectedSymptoms },
+          state: { patientName, patientId, patientSex, patientAge, scanDate, symptoms: selectedSymptoms },
         });
       }, 500);
     } catch (error: any) {
@@ -484,6 +486,43 @@ const UploadPage = () => {
                         className="h-11 transition-all duration-300"
                         style={isLight ? { background: "hsl(40,16%,93%)", border: "1px solid hsl(40,22%,72%)", color: "hsl(150,28%,14%)" } : {}}
                       />
+                    </motion.div>
+
+                    {/* Sexe + Âge */}
+                    <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.25 }} className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-2 text-sm" style={{ color: isLight ? "hsl(150,18%,34%)" : undefined }}>
+                          {lang === "fr" ? "Sexe" : "Sex"}
+                        </Label>
+                        <select
+                          value={patientSex}
+                          onChange={(e) => setPatientSex(e.target.value as "M" | "F" | "Autre" | "")}
+                          className="w-full h-11 px-3 rounded-md text-sm transition-all duration-300"
+                          style={isLight
+                            ? { background: "hsl(40,16%,93%)", border: "1px solid hsl(40,22%,72%)", color: patientSex ? "hsl(150,28%,14%)" : "hsl(150,16%,48%)" }
+                            : { background: "rgba(255,255,255,0.03)", border: "1px solid hsl(var(--border))", color: patientSex ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))", borderRadius: "calc(var(--radius) - 2px)" }}
+                        >
+                          <option value="">{lang === "fr" ? "— Sélectionner —" : "— Select —"}</option>
+                          <option value="M">{lang === "fr" ? "Masculin" : "Male"}</option>
+                          <option value="F">{lang === "fr" ? "Féminin" : "Female"}</option>
+                          <option value="Autre">{lang === "fr" ? "Autre" : "Other"}</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-2 text-sm" style={{ color: isLight ? "hsl(150,18%,34%)" : undefined }}>
+                          {lang === "fr" ? "Âge" : "Age"}
+                        </Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={130}
+                          placeholder={lang === "fr" ? "ex. 45" : "e.g. 45"}
+                          value={patientAge}
+                          onChange={(e) => setPatientAge(e.target.value)}
+                          className="h-11 transition-all duration-300"
+                          style={isLight ? { background: "hsl(40,16%,93%)", border: "1px solid hsl(40,22%,72%)", color: "hsl(150,28%,14%)" } : {}}
+                        />
+                      </div>
                     </motion.div>
 
                     {/* Date — Calendrier */}

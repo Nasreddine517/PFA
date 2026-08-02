@@ -112,6 +112,66 @@ def get_yolo_model() -> YOLO:
     return YOLO(str(weights_path))
 
 
+@lru_cache
+def get_efficientnet_model():
+    """Load the EfficientNetB0 Keras model for false-positive filtering.
+
+    Uses the PyTorch backend (KERAS_BACKEND=torch) so that TensorFlow is not
+    required — only the 'keras' package and the already-present 'torch' are
+    needed.  The model is cached for the lifetime of the process.
+    """
+    import os
+    os.environ.setdefault("KERAS_BACKEND", "torch")
+    import keras  # lazy import — heavy, only loaded when EfficientNet is first needed
+
+    path = Path(settings.efficientnet_weights_path)
+    if not path.is_file():
+        raise ModelConfigurationError(
+            f"EfficientNet weights not found at '{path}'.",
+        )
+    return keras.models.load_model(str(path))
+
+
+def _efficientnet_is_suspect(
+    image_bytes: bytes,
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+) -> bool:
+    """Pass the full MRI slice to EfficientNet to confirm or reject a YOLO detection.
+
+    The model was trained on complete MRI images (not crops), so the full slice
+    is resized to 224×224 and sent as-is.  The bounding box coordinates are
+    accepted as parameters for API consistency but are not used for cropping.
+
+    The model outputs a single sigmoid value:
+      ≥ efficientnet_threshold  →  Suspect  (keep the YOLO detection)
+      <  efficientnet_threshold  →  Healthy  (false positive — reject)
+
+    Any error falls back to True (accept) so a broken EfficientNet never
+    silently drops all detections.
+    """
+    try:
+        img = Image.open(BytesIO(image_bytes)).convert("RGB").resize((224, 224), Image.LANCZOS)
+        # The model includes an internal Rescaling layer and expects raw pixels
+        # in [0, 255].  Do NOT divide by 255 here — the model handles it.
+        arr = np.array(img, dtype=np.float32)
+        arr = np.expand_dims(arr, axis=0)  # (1, 224, 224, 3)
+
+        efficientnet = get_efficientnet_model()
+        pred = float(efficientnet.predict(arr, verbose=0)[0][0])
+
+        is_suspect = pred >= settings.efficientnet_threshold
+        verdict = "Suspect ✓" if is_suspect else "Healthy — FP rejected"
+        print(f"  [EfficientNet] pred={pred:.3f} → {verdict}")
+        return is_suspect
+
+    except Exception as exc:
+        print(f"  [EfficientNet] validation error: {type(exc).__name__}: {exc} → accepting detection")
+        return True  # fail-open: never silently discard when EfficientNet errors
+
+
 def build_stub_response(*, file_bytes: bytes, file_name: str, file_type: str) -> dict:
     digest = hashlib.sha256(file_bytes + file_name.encode("utf-8") + file_type.encode("utf-8")).digest()
     positive = digest[0] % 100 < 28
@@ -269,9 +329,24 @@ def normalize_dicom_pixels(dataset) -> np.ndarray:
     return pixel_array
 
 
-def _normalize_frame(raw_frame: np.ndarray, *, rescale_slope: float, rescale_intercept: float, monochrome1: bool) -> np.ndarray:
+def _normalize_frame(
+    raw_frame: np.ndarray,
+    *,
+    rescale_slope: float,
+    rescale_intercept: float,
+    monochrome1: bool,
+    window_center: float | None = None,
+    window_width: float | None = None,
+) -> np.ndarray:
     arr = raw_frame.astype(np.float32)
     arr = arr * rescale_slope + rescale_intercept
+
+    # Apply Window Center / Window Width when available.
+    # This matches the preprocessing used in analyze_patient.py during training,
+    # ensuring inference images look the same as training images for EfficientNet.
+    if window_center is not None and window_width is not None and window_width > 0:
+        arr = np.clip(arr, window_center - window_width / 2, window_center + window_width / 2)
+
     mn, mx = float(arr.min()), float(arr.max())
     if mx > mn:
         arr = (arr - mn) / (mx - mn)
@@ -287,19 +362,94 @@ def _normalize_frame(raw_frame: np.ndarray, *, rescale_slope: float, rescale_int
     return arr
 
 
+def _decode_pixel_array_raw(dataset) -> np.ndarray:
+    """Raw-numpy fallback: decode uncompressed DICOM pixels without pydicom handlers.
+
+    Works for all uncompressed transfer syntaxes (implicit/explicit VR, big/little
+    endian) regardless of pydicom version quirks.  Raises AttributeError / ValueError
+    if the dataset is missing required attributes or the data appears compressed.
+    """
+    rows = int(dataset.Rows)
+    cols = int(dataset.Columns)
+    bits = int(dataset.BitsAllocated)
+    rep = int(getattr(dataset, "PixelRepresentation", 0))
+    samples = int(getattr(dataset, "SamplesPerPixel", 1))
+
+    dtype_map = {
+        (8,  0): np.uint8,  (8,  1): np.int8,
+        (16, 0): np.uint16, (16, 1): np.int16,
+        (32, 0): np.uint32, (32, 1): np.int32,
+    }
+    dtype = dtype_map.get((bits, rep), np.uint16)
+
+    raw = bytes(dataset.PixelData)
+    bytes_per_px = bits // 8
+    frame_bytes = rows * cols * samples * bytes_per_px
+    if frame_bytes == 0:
+        raise ValueError("Zero-sized frame (Rows/Columns/BitsAllocated is 0).")
+
+    # Heuristic: if the raw data is much smaller than one uncompressed frame
+    # the pixel data is likely compressed (encapsulated) — refuse to guess.
+    if len(raw) < frame_bytes // 2:
+        raise ValueError(
+            f"PixelData too small ({len(raw)} B) for an uncompressed "
+            f"{rows}x{cols} frame ({frame_bytes} B expected). "
+            "Data may be compressed."
+        )
+
+    n_frames = max(1, len(raw) // frame_bytes)
+    arr = np.frombuffer(raw[: n_frames * frame_bytes], dtype=dtype).copy()
+
+    if samples == 1:
+        return arr.reshape(n_frames, rows, cols) if n_frames > 1 else arr.reshape(rows, cols)
+    return arr.reshape(n_frames, rows, cols, samples) if n_frames > 1 else arr.reshape(rows, cols, samples)
+
+
 def extract_all_dicom_frames(dataset) -> list[np.ndarray]:
     """Return all slices of a DICOM dataset as a list of normalized uint8 arrays."""
     _ensure_transfer_syntax(dataset)
+
+    pixel_array = None
+    primary_exc: Exception | None = None
+
+    # ── Attempt 1: standard pydicom handler pipeline ──────────────────────────
     try:
         pixel_array = dataset.pixel_array
-    except Exception as exc:  # pragma: no cover
-        raise InferenceInputError(
-            "The DICOM image could not be decoded into pixel data.",
-        ) from exc
+    except Exception as exc:
+        primary_exc = exc
+        ts = getattr(getattr(dataset, "file_meta", None), "TransferSyntaxUID", "?")
+        print(
+            f"  [NeuroScan] pixel_array failed (TS={ts}) "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+    # ── Attempt 2: raw-numpy fallback (uncompressed only) ────────────────────
+    if pixel_array is None:
+        try:
+            pixel_array = _decode_pixel_array_raw(dataset)
+            print("  [NeuroScan] pixel_array: using raw-numpy fallback")
+        except Exception as exc2:
+            print(f"  [NeuroScan] raw fallback also failed: {type(exc2).__name__}: {exc2}")
+            raise InferenceInputError(
+                "The DICOM image could not be decoded into pixel data.",
+            ) from primary_exc
 
     rescale_slope = parse_positive_float(getattr(dataset, "RescaleSlope", 1)) or 1.0
     rescale_intercept = float(getattr(dataset, "RescaleIntercept", 0) or 0)
     monochrome1 = str(getattr(dataset, "PhotometricInterpretation", "")).upper() == "MONOCHROME1"
+
+    # Extract Window Center / Width for contrast normalisation (matches analyze_patient.py)
+    window_center: float | None = None
+    window_width: float | None = None
+    _wc = getattr(dataset, "WindowCenter", None)
+    _ww = getattr(dataset, "WindowWidth", None)
+    if _wc is not None and _ww is not None:
+        try:
+            from pydicom.multival import MultiValue as _MV
+            window_center = float(_wc[0] if isinstance(_wc, _MV) else _wc)
+            window_width  = float(_ww[0] if isinstance(_ww, _MV) else _ww)
+        except Exception:
+            pass  # If parsing fails, fall back to global min-max
 
     # Determine raw frames list
     if pixel_array.ndim == 2:
@@ -321,7 +471,14 @@ def extract_all_dicom_frames(dataset) -> list[np.ndarray]:
         raw_frames = [pixel_array[0]]
 
     return [
-        _normalize_frame(f, rescale_slope=rescale_slope, rescale_intercept=rescale_intercept, monochrome1=monochrome1)
+        _normalize_frame(
+            f,
+            rescale_slope=rescale_slope,
+            rescale_intercept=rescale_intercept,
+            monochrome1=monochrome1,
+            window_center=window_center,
+            window_width=window_width,
+        )
         for f in raw_frames
     ]
 
@@ -332,27 +489,266 @@ def write_temp_input_file(*, suffix: str, file_bytes: bytes) -> str:
         return temp_file.name
 
 
-def build_dicom_temp_images(file_bytes: bytes) -> tuple[list[str], PhysicalScale | None]:
-    """Convert every slice of a (possibly multi-frame) DICOM into a temp PNG.
+def _raw_dicom_pixel_scan(file_bytes: bytes) -> np.ndarray | None:
+    """Last-resort: scan the raw binary for standard DICOM pixel-data tags.
 
-    Returns a list of temp file paths and the shared physical scale.
+    Handles both Implicit VR and Explicit VR layouts, in Little-Endian and
+    Big-Endian byte orders.  Works for files where pydicom stops parsing early.
     """
+    import struct
+
+    LONG_VRS = {b'OB', b'OD', b'OF', b'OL', b'OW', b'SQ', b'UC', b'UN', b'UR', b'UT'}
+
+    def _read_uint_at(data: bytes, offset: int, size: int, big: bool) -> int | None:
+        fmt = (">" if big else "<") + ("H" if size == 2 else "I")
+        try:
+            (v,) = struct.unpack_from(fmt, data, offset)
+            return v
+        except struct.error:
+            return None
+
+    def _is_vr(b0: int, b1: int) -> bool:
+        """Two uppercase ASCII letters = Explicit VR marker."""
+        return 65 <= b0 <= 90 and 65 <= b1 <= 90
+
+    def _find_attr_uint16(data: bytes, tag: bytes, big: bool) -> int | None:
+        """Search for a simple uint16 DICOM attribute in both VR modes."""
+        idx = 0
+        ec = ">" if big else "<"
+        while True:
+            pos = data.find(tag, idx)
+            if pos == -1 or pos + 10 > len(data):
+                break
+            b4, b5 = data[pos + 4], data[pos + 5]
+            try:
+                if _is_vr(b4, b5):
+                    # Explicit VR — short form (US/SS/…): length at +6 (2 B)
+                    length, = struct.unpack_from(ec + "H", data, pos + 6)
+                    val_off = pos + 8
+                else:
+                    # Implicit VR — length at +4 (4 B)
+                    length, = struct.unpack_from(ec + "I", data, pos + 4)
+                    val_off = pos + 8
+                if length == 2:
+                    (val,) = struct.unpack_from(ec + "H", data, val_off)
+                    if val > 0:
+                        return val
+                if length == 4:
+                    (val,) = struct.unpack_from(ec + "I", data, val_off)
+                    if val > 0:
+                        return val
+            except struct.error:
+                pass
+            idx = pos + 1
+        return None
+
+    for big_endian in (False, True):
+        ec = ">" if big_endian else "<"
+        if big_endian:
+            rows_tag   = b'\x00\x28\x00\x10'
+            cols_tag   = b'\x00\x28\x00\x11'
+            bits_tag   = b'\x00\x28\x01\x00'
+            pixel_tag  = b'\x7F\xE0\x00\x10'
+        else:
+            rows_tag   = b'\x28\x00\x10\x00'
+            cols_tag   = b'\x28\x00\x11\x00'
+            bits_tag   = b'\x28\x00\x00\x01'
+            pixel_tag  = b'\xE0\x7F\x10\x00'
+
+        rows = _find_attr_uint16(file_bytes, rows_tag, big_endian)
+        cols = _find_attr_uint16(file_bytes, cols_tag, big_endian)
+        bits = _find_attr_uint16(file_bytes, bits_tag, big_endian) or 16
+
+        if not (rows and cols):
+            continue
+
+        # Find last occurrence of pixel-data tag
+        pix_pos = file_bytes.rfind(pixel_tag)
+        if pix_pos == -1 or pix_pos + 8 > len(file_bytes):
+            continue
+
+        b4 = file_bytes[pix_pos + 4] if pix_pos + 4 < len(file_bytes) else 0
+        b5 = file_bytes[pix_pos + 5] if pix_pos + 5 < len(file_bytes) else 0
+
+        if _is_vr(b4, b5):
+            vr_bytes = bytes([b4, b5])
+            if vr_bytes in LONG_VRS:
+                # Long Explicit VR: 2 reserved + 4-byte length
+                length_val = _read_uint_at(file_bytes, pix_pos + 8, 4, big_endian)
+                data_start = pix_pos + 12
+            else:
+                # Short Explicit VR: 2-byte length
+                length_val = _read_uint_at(file_bytes, pix_pos + 6, 2, big_endian)
+                data_start = pix_pos + 8
+        else:
+            # Implicit VR: 4-byte length
+            length_val = _read_uint_at(file_bytes, pix_pos + 4, 4, big_endian)
+            data_start = pix_pos + 8
+
+        if length_val is None:
+            continue
+
+        if length_val == 0xFFFFFFFF:
+            pixel_data = file_bytes[data_start:]
+        else:
+            pixel_data = file_bytes[data_start: data_start + length_val]
+
+        bytes_per_px = bits // 8
+        expected = rows * cols * bytes_per_px
+        if len(pixel_data) < expected:
+            print(
+                f"  [NeuroScan] raw-scan: pixel buffer too small "
+                f"({len(pixel_data)} B < {expected} B for {rows}x{cols} {bits}-bit)"
+            )
+            continue
+
+        dtype_map = {8: np.uint8, 16: np.uint16, 32: np.uint32}
+        dtype = dtype_map.get(bits, np.uint16)
+        arr = np.frombuffer(
+            pixel_data[:expected],
+            dtype=np.dtype(f"{'>' if big_endian else '<'}u{dtype().itemsize}"),
+        ).copy()
+        try:
+            return arr.reshape(rows, cols)
+        except ValueError:
+            continue
+
+    return None
+
+
+def build_dicom_temp_images(file_bytes: bytes) -> tuple[list[str], PhysicalScale | None]:
+    """Convert every slice of a DICOM *or* plain image file into temp PNGs.
+
+    Strategy
+    --------
+    1. Try pydicom (handles real DICOM files of any transfer syntax).
+    2. If pydicom finds no pixel data, try Pillow (JPEG / PNG / TIFF / BMP …).
+    3. If Pillow cannot identify the format, try a raw binary DICOM tag scan
+       that searches for Rows / Columns / PixelData tags directly in the bytes.
+       Handles both little-endian and big-endian implicit-VR layouts, and files
+       where pydicom's sequential parser stops early.
+    """
+    # ── Attempt 1: pydicom ────────────────────────────────────────────────────
+    _frames: list[np.ndarray] | None = None
+    _physical_scale: PhysicalScale | None = None
+
     try:
-        dataset = dcmread(BytesIO(file_bytes), force=True)
-    except InvalidDicomError as exc:
-        raise InferenceInputError("The uploaded DICOM file is invalid.") from exc
+        _dataset = dcmread(BytesIO(file_bytes), force=True)
 
-    frames = extract_all_dicom_frames(dataset)
-    physical_scale = extract_physical_scale(dataset)
+        # Detect non-image DICOM files (SR, PR, KO, waveforms…) and fail fast
+        # with a human-readable message instead of a confusing pixel-data error.
+        _modality = str(getattr(_dataset, "Modality", "")).upper()
+        _fm       = getattr(_dataset, "file_meta", None)
+        _sop      = str(getattr(_fm, "MediaStorageSOPClassUID", ""))
+        _NON_IMAGE_MODALITIES = {"SR", "PR", "KO", "AU", "BI", "DOC", "FID", "PLAN", "REG"}
+        _NON_IMAGE_SOP_PREFIXES = (
+            "1.2.840.10008.5.1.4.1.1.88",   # Structured Reports
+            "1.2.840.10008.5.1.4.1.1.11",   # Presentation States
+            "1.2.840.10008.5.1.4.1.1.9",    # Waveforms
+        )
+        _is_non_image = (
+            _modality in _NON_IMAGE_MODALITIES
+            or any(_sop.startswith(p) for p in _NON_IMAGE_SOP_PREFIXES)
+        )
+        if _is_non_image:
+            raise InferenceInputError(
+                f"Ce fichier DICOM est un rapport ou document (Modality={_modality or 'SR'}), "
+                "pas une image IRM. Sélectionnez les fichiers d'images dans le bon dossier série."
+            )
 
-    temp_paths: list[str] = []
-    for frame_array in frames:
-        image_mode = "L" if frame_array.ndim == 2 else "RGB"
+        _frames = extract_all_dicom_frames(_dataset)
+        _physical_scale = extract_physical_scale(_dataset)
+    except InferenceInputError:
+        raise   # re-raise SR / non-image errors immediately — don't fall through
+    except Exception:
+        pass
+
+    if _frames:
+        temp_paths: list[str] = []
+        for frame_array in _frames:
+            image_mode = "L" if frame_array.ndim == 2 else "RGB"
+            with NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                Image.fromarray(frame_array, mode=image_mode).save(tmp, format="PNG")
+                temp_paths.append(tmp.name)
+        return temp_paths, _physical_scale
+
+    # ── Attempt 2: PIL (JPEG / PNG / TIFF / BMP / …) ─────────────────────────
+    try:
+        img = Image.open(BytesIO(file_bytes))
+        if img.mode == "RGBA":
+            img = img.convert("RGB")
+        elif img.mode not in ("L", "RGB", "I", "F"):
+            img = img.convert("L")
+        arr = np.array(img)
+        normalized = _normalize_frame(
+            arr, rescale_slope=1.0, rescale_intercept=0.0, monochrome1=False
+        )
+        image_mode = "L" if normalized.ndim == 2 else "RGB"
         with NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            Image.fromarray(frame_array, mode=image_mode).save(tmp, format="PNG")
-            temp_paths.append(tmp.name)
+            Image.fromarray(normalized, mode=image_mode).save(tmp, format="PNG")
+            return [tmp.name], None
+    except Exception:
+        pass
 
-    return temp_paths, physical_scale
+    # ── Attempt 3: raw binary DICOM tag scan ──────────────────────────────────
+    raw_arr = _raw_dicom_pixel_scan(file_bytes)
+    if raw_arr is not None:
+        normalized = _normalize_frame(
+            raw_arr, rescale_slope=1.0, rescale_intercept=0.0, monochrome1=False
+        )
+        with NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            Image.fromarray(normalized, mode="L").save(tmp, format="PNG")
+            print("  [NeuroScan] raw-scan succeeded")
+            return [tmp.name], None
+
+    # ── Attempt 4: embedded image scan ───────────────────────────────────────
+    # JPEG-compressed DICOM stores pixel data as a raw JPEG/JPEG2000 stream
+    # inside the binary.  pydicom fails when the transfer syntax is wrong/missing,
+    # PIL fails because the DICOM preamble (zeros) is at offset 0.
+    # Solution: find the first standard image magic bytes and decode from there.
+    _IMAGE_MAGICS = [
+        (b"\xFF\xD8\xFF", ".jpg"),   # JPEG / JPEG-LS / JPEG 2000 wrapper
+        (b"\x89PNG",       ".png"),
+        (b"II*\x00",       ".tif"),  # TIFF little-endian
+        (b"MM\x00*",       ".tif"),  # TIFF big-endian
+        (b"\x00\x00\x00\x0C\x6A\x50\x20\x20", ".jp2"),  # JPEG 2000
+    ]
+    for magic, _ext in _IMAGE_MAGICS:
+        img_start = file_bytes.find(magic)
+        if img_start < 0:
+            continue
+        print(f"  [NeuroScan] found {_ext[1:].upper()} magic at offset {img_start} — trying PIL")
+        try:
+            img = Image.open(BytesIO(file_bytes[img_start:]))
+            img.load()
+            if img.mode == "RGBA":
+                img = img.convert("RGB")
+            elif img.mode not in ("L", "RGB", "I", "F"):
+                img = img.convert("L")
+            arr = np.array(img)
+            normalized = _normalize_frame(
+                arr, rescale_slope=1.0, rescale_intercept=0.0, monochrome1=False
+            )
+            image_mode = "L" if normalized.ndim == 2 else "RGB"
+            with NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                Image.fromarray(normalized, mode=image_mode).save(tmp, format="PNG")
+                print(f"  [NeuroScan] embedded-{_ext[1:].upper()} decode succeeded")
+                return [tmp.name], None
+        except Exception as _emb_exc:
+            print(f"  [NeuroScan] embedded-{_ext[1:].upper()} decode failed: {_emb_exc}")
+
+    _magic_found = {
+        name: file_bytes.find(magic) for magic, name in [
+            (b"\xFF\xD8\xFF", "JPEG"),
+            (b"\x89PNG",       "PNG"),
+            (b"DICM",          "DICM"),
+        ]
+    }
+    raise InferenceInputError(
+        "Le fichier ne peut pas être décodé : ni DICOM, ni image standard, "
+        "ni extraction binaire, ni image embarquée. "
+        f"[sz={len(file_bytes)} magic={_magic_found}]"
+    )
 
 
 def format_cross_section_area(area_mm2: float) -> str:
@@ -474,6 +870,27 @@ def bytes_to_base64_data_uri(image_bytes: bytes) -> str:
     return f"data:image/png;base64,{encoded}"
 
 
+def _apply_slice_continuity_filter(
+    per_slice: list[tuple[int, dict]],
+) -> list[tuple[int, dict]]:
+    """Discard isolated positive detections to reduce false positives.
+
+    A positive detection on slice *i* is kept only when at least one other
+    positive detection exists within ±2 slice indices (direct neighbour or
+    one empty slice in between).  Negative slices always pass through.
+    """
+    positive_indices = {idx for idx, r in per_slice if r["tumor_detected"]}
+
+    def _has_neighbor(idx: int) -> bool:
+        return any(j != idx and abs(j - idx) <= 2 for j in positive_indices)
+
+    return [
+        (idx, r)
+        for idx, r in per_slice
+        if not r["tumor_detected"] or _has_neighbor(idx)
+    ]
+
+
 def run_yolo_inference(*, file_bytes: bytes, file_name: str) -> dict:
     model = get_yolo_model()
     name = Path(file_name).name
@@ -495,10 +912,10 @@ def run_yolo_inference(*, file_bytes: bytes, file_name: str) -> dict:
                 "The current YOLO pipeline only supports DICOM, PNG, and JPEG MRI images.",
             )
 
-    best_result: dict | None = None
+    per_slice_results: list[tuple[int, dict]] = []
     preview_image_data: str | None = None
 
-    for temp_path in temp_paths:
+    for slice_idx, temp_path in enumerate(temp_paths):
         try:
             results = model.predict(
                 source=temp_path,
@@ -520,14 +937,51 @@ def run_yolo_inference(*, file_bytes: bytes, file_name: str) -> dict:
             candidate = build_classification_response(first_result, file_name)
         else:
             candidate = build_detection_response(first_result, file_name, physical_scale)
+            # ── Stage 2: EfficientNet false-positive filter ───────────────────
+            # YOLO detected a tumour region → validate with EfficientNet.
+            # If EfficientNet classifies the crop as Healthy, the detection is
+            # discarded as a false positive.
+            if candidate["tumor_detected"] and candidate.get("bounding_box") is not None:
+                bb = candidate["bounding_box"]
+                ef_x1 = bb["x"]
+                ef_y1 = bb["y"]
+                ef_x2 = ef_x1 + bb["width"]
+                ef_y2 = ef_y1 + bb["height"]
+                if not _efficientnet_is_suspect(frame_bytes, ef_x1, ef_y1, ef_x2, ef_y2):
+                    candidate = {
+                        "result": "negative",
+                        "confidence": candidate["confidence"],
+                        "tumor_detected": False,
+                        "tumor_type": None,
+                        "tumor_location": None,
+                        "tumor_volume": None,
+                        "bounding_box": None,
+                        "report_text": (
+                            f"YOLO flagged a suspected {candidate['tumor_type']} but "
+                            "EfficientNet classified the region as Healthy "
+                            "(false positive rejected)."
+                        ),
+                        "model_version": candidate["model_version"],
+                    }
 
+        per_slice_results.append((slice_idx, candidate))
+
+    if not per_slice_results:
+        raise InferenceInputError("The YOLO model returned no prediction.")
+
+    # Apply temporal continuity filter on multi-slice inputs (DICOM) only.
+    # A positive detection is kept only when another positive exists within
+    # ±2 slice indices; isolated detections are discarded as false positives.
+    if len(temp_paths) > 1:
+        per_slice_results = _apply_slice_continuity_filter(per_slice_results)
+
+    best_result: dict | None = None
+    for _, candidate in per_slice_results:
         if best_result is None:
             best_result = candidate
         elif candidate["tumor_detected"] and not best_result["tumor_detected"]:
-            # Prefer any positive finding over a negative one
             best_result = candidate
         elif candidate["tumor_detected"] and best_result["tumor_detected"] and candidate["confidence"] > best_result["confidence"]:
-            # Among positives, keep the most confident
             best_result = candidate
 
     if best_result is None:
@@ -561,18 +1015,21 @@ def get_dicom_instance_number(file_bytes: bytes) -> int:
         return 0
 
 
-SERIES_ACCEPTED_EXTENSIONS = {".dcm", ".dicom", ".png", ".jpg", ".jpeg"}
+SERIES_ACCEPTED_EXTENSIONS = {".dcm", ".dicom", ".ima", ".png", ".jpg", ".jpeg"}
 
 MAX_POSITIVE_SLICES = 500  # Maximum number of positive slices to expose in the UI
-SERIES_CONFIDENCE_THRESHOLD = 55.0  # Minimum per-image confidence (%) to count a detection toward the cumulative vote
-SERIES_INTEREST_THRESHOLD = 20.0    # Minimum confidence (%) to include a slice in the "slices of interest" display
+SERIES_CONFIDENCE_THRESHOLD = 45.0  # Minimum per-image confidence (%) to count a detection toward the cumulative vote
+SERIES_INTEREST_THRESHOLD = 15.0    # Minimum confidence (%) to include a slice in the "slices of interest" display
+YOLO_COVERAGE_THRESHOLD = 0.60      # If YOLO flags > 60% of frames as tumour, series is positive (bypasses EfficientNet)
+YOLO_COVERAGE_MIN_FRAMES = 10       # Minimum frames processed to apply the coverage track
 TUMOR_RATIO_SUSPICIOUS_THRESHOLD = 6.0  # (legacy — kept for reference)
 MAX_SERIES_SLICES_TO_PROCESS = 40  # Uniform sample across the full series — balances accuracy and response time
+MAX_PACS_SLICES_PER_SERIES: int = 500  # Max slices stored for the PACS viewer (independent of YOLO inference limit)
 
 # ── Cluster-based decision thresholds ──────────────────────────────────────────
 # Per-detection minimum confidence to enter the clustering pipeline.
 # Detections below this value are considered noise and are discarded.
-CLUSTER_MIN_CONFIDENCE: float = 0.30
+CLUSTER_MIN_CONFIDENCE: float = 0.20
 
 # Two detections can belong to the same cluster only if they are on slices
 # whose sequential indices differ by at most this value.
@@ -860,12 +1317,13 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
     def _sort_key(item: tuple[bytes, str, str]) -> tuple[int, int]:
         fn = item[1]
         sfx = Path(fn).suffix.lower()
-        if sfx in {".dcm", ".dicom"} or sfx == "":
+        if sfx in {".dcm", ".dicom", ".ima"} or sfx == "":
             return (0, get_dicom_instance_number(item[0]))
         return (1, 0)
 
     sorted_files = sorted(valid_files, key=_sort_key)
     slice_count = len(sorted_files)
+    all_sorted_for_pacs = sorted_files  # full list kept for PACS viewer (before YOLO sampling)
 
     # Sample uniformly across the series so we cover the full volume even for large series.
     # e.g. 320 images → step=8 → 40 evenly-spaced slices analysed.
@@ -885,13 +1343,14 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
 
     if settings.model_provider == "yolo":
         model = get_yolo_model()
-        # Cumulative vote: class_name → [confidence_sum, vote_count, max_confidence]
-        cumulative_scores: dict[str, list] = {}
-        # All slices where any tumour is detected with confidence > SERIES_INTEREST_THRESHOLD
+        # Slices where any tumour is detected with confidence > SERIES_INTEREST_THRESHOLD
         interest_slices: list = []
+        yolo_tumor_frames: int = 0       # frames where YOLO detected tumour (before EfficientNet)
+        yolo_only_slices: list = []      # all YOLO-flagged slices, used for coverage-track result
         preview_image_data: str | None = None
         physical_scale: PhysicalScale | None = None
         frame_idx = 0  # sequential index across all processed frames
+        _skip_diag: list[str] = []  # diagnostic bytes for skipped files
 
         for file_loop_idx, (file_bytes, file_name, _) in enumerate(sorted_files):
             suffix = Path(file_name).suffix.lower()
@@ -899,12 +1358,28 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
             uid_parts = [p for p in name.split(".") if p]
             is_uid_dicom = len(uid_parts) >= 3 and all(p.isdigit() for p in uid_parts)
 
-            if suffix in {".dcm", ".dicom"} or suffix == "" or is_uid_dicom:
-                temp_paths, physical_scale = build_dicom_temp_images(file_bytes)
-            elif suffix in {".jpeg", ".jpg", ".png"}:
-                temp_paths = [write_temp_input_file(suffix=suffix, file_bytes=file_bytes)]
-            else:
-                # Unknown extension — skip to avoid crashing YOLO
+            try:
+                if suffix in {".dcm", ".dicom", ".ima"} or suffix == "" or is_uid_dicom:
+                    temp_paths, file_physical_scale = build_dicom_temp_images(file_bytes)
+                    if file_physical_scale is not None:
+                        physical_scale = file_physical_scale
+                elif suffix in {".jpeg", ".jpg", ".png"}:
+                    temp_paths = [write_temp_input_file(suffix=suffix, file_bytes=file_bytes)]
+                else:
+                    # Unknown extension — skip to avoid crashing YOLO
+                    continue
+            except (InferenceInputError, Exception) as _decode_err:
+                # Skip undecodable or non-image DICOM files (e.g. DICOMDIR,
+                # structured reports, or files with unsupported transfer syntax).
+                _cause = getattr(_decode_err, "__cause__", None) or _decode_err
+                print(
+                    f"[NeuroScan] Skipping file '{file_name}': "
+                    f"{type(_cause).__name__}: {_cause}"
+                )
+                _cause_msg = str(_cause)
+                _skip_diag.append(
+                    f"{file_name}({'SR' if 'SR' in _cause_msg or 'rapport' in _cause_msg else 'ERR'})"
+                )
                 continue
 
             for temp_path_idx, temp_path in enumerate(temp_paths):
@@ -965,8 +1440,11 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
                 )
 
                 # Slice of interest: any tumour detection with confidence > 20%
+                # Store frame_idx for the isolation filter applied after the loop.
                 if is_tumor and conf > SERIES_INTEREST_THRESHOLD / 100.0:
-                    interest_slices.append({
+                    # Track for YOLO-coverage track (counts before EfficientNet)
+                    yolo_tumor_frames += 1
+                    _slice_data = {
                         "image_data": bytes_to_base64_data_uri(frame_png),
                         "file_name": file_name,
                         "confidence": round(conf * 100, 1),
@@ -974,35 +1452,97 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
                         "tumor_location": infer_region_label(x_c, y_c),
                         "bounding_box": bbox,
                         "slice_position": slice_position,
-                    })
+                    }
+                    yolo_only_slices.append(_slice_data)
 
-                # Cumulative vote: only tumour classes with confidence >= 55%
-                # NO_tumor is never accumulated — wins only by default (no votes)
-                if is_tumor and conf >= SERIES_CONFIDENCE_THRESHOLD / 100.0:
-                    entry = cumulative_scores.setdefault(label, [0.0, 0, 0.0])
-                    entry[0] += conf    # running sum
-                    entry[1] += 1       # vote count
-                    entry[2] = max(entry[2], conf)  # peak confidence
+                    # ── Stage 2: EfficientNet false-positive filter ───────────
+                    # YOLO detected a tumour → EfficientNet validates to reject
+                    # false positives (eyes, glands, brain stem, etc.).
+                    # Classification models (bbox is None) skip this step.
+                    ef_passes = True
+                    if bbox is not None:
+                        ef_x1 = bbox["x"]
+                        ef_y1 = bbox["y"]
+                        ef_x2 = ef_x1 + bbox["width"]
+                        ef_y2 = ef_y1 + bbox["height"]
+                        ef_passes = _efficientnet_is_suspect(frame_png, ef_x1, ef_y1, ef_x2, ef_y2)
+
+                    if ef_passes:
+                        interest_slices.append(_slice_data)
 
                 frame_idx += 1
 
-        # ── Cumulative vote winner ────────────────────────────────────────────
+        # ── Post-loop diagnostics ─────────────────────────────────────────────
         print(
             f"\n[NeuroScan] Series inference — {frame_idx} frame(s) processed, "
-            f"{len(interest_slices)} interest slice(s), "
-            f"{len(cumulative_scores)} class(es) above "
-            f"{SERIES_CONFIDENCE_THRESHOLD:.0f}% threshold"
+            f"{len(interest_slices)} candidate slice(s) above "
+            f"{SERIES_INTEREST_THRESHOLD:.0f}% threshold"
         )
-        for cls, (s, cnt, mx) in sorted(
-            cumulative_scores.items(), key=lambda x: x[1][0], reverse=True
-        ):
-            print(
-                f"  {cls:14s}  votes={cnt:3d}  "
-                f"cumul={s:.2f}  avg={s / cnt:.2f}  max={mx:.2f}"
+
+        if frame_idx == 0:
+            _sr_count = sum(1 for d in _skip_diag if "SR" in d or "rapport" in d)
+            if _sr_count > 0:
+                raise InferenceInputError(
+                    f"{_sr_count} fichier(s) sont des rapports DICOM (Modality=SR), "
+                    "pas des images IRM. "
+                    "Ouvrez le bon dossier série contenant les images MRI "
+                    "(typiquement SRS00002 ou SRS00003 dans ton dossier d'examen)."
+                )
+            diag = " | ".join(_skip_diag[:5]) or "(aucun fichier traité)"
+            raise InferenceInputError(
+                "Aucune image de la série n'a pu être décodée. "
+                "Vérifiez que les fichiers sont des images DICOM, PNG ou JPEG valides. "
+                f"[DIAG: {diag}]"
             )
 
-        if not cumulative_scores:
-            # No tumour class reached the threshold → report negative
+        # ── Isolation filter removed — every EfficientNet-confirmed slice counts ──
+        red_count = len(interest_slices)
+        print(f"  → After isolation filter: {red_count} non-isolated red slice(s)")
+
+        # ── YOLO-coverage track ───────────────────────────────────────────────
+        # If YOLO detects tumour on > YOLO_COVERAGE_THRESHOLD of all processed
+        # frames, the series is positive WITHOUT requiring EfficientNet
+        # confirmation. Catches tumour types EfficientNet was not trained on.
+        if frame_idx >= YOLO_COVERAGE_MIN_FRAMES and yolo_only_slices:
+            yolo_coverage = yolo_tumor_frames / frame_idx
+            if yolo_coverage >= YOLO_COVERAGE_THRESHOLD:
+                print(
+                    f"  → [YOLO-coverage] {yolo_tumor_frames}/{frame_idx} = {yolo_coverage:.0%}"
+                    f" ≥ {YOLO_COVERAGE_THRESHOLD:.0%} → POSITIVE (coverage track)"
+                )
+                cov_scores: dict[str, float] = {}
+                for s in yolo_only_slices:
+                    cov_scores[s["tumor_type"]] = cov_scores.get(s["tumor_type"], 0.0) + s["confidence"]
+                cov_winner = max(cov_scores, key=lambda c: cov_scores[c])
+                cov_slices = [s for s in yolo_only_slices if s["tumor_type"] == cov_winner]
+                cov_avg = round(sum(s["confidence"] for s in cov_slices) / len(cov_slices), 1)
+                cov_rep = max(cov_slices, key=lambda s: s["confidence"])
+                cov_result = {
+                    "result": "positive",
+                    "confidence": cov_avg,
+                    "tumor_detected": True,
+                    "tumor_type": cov_winner,
+                    "tumor_location": cov_rep["tumor_location"],
+                    "tumor_volume": "N/A (YOLO-coverage track)",
+                    "bounding_box": cov_rep.get("bounding_box"),
+                    "report_text": (
+                        f"YOLO-coverage: tumour signal on {yolo_tumor_frames}/{frame_idx} frames "
+                        f"({yolo_coverage:.0%}). Likely {cov_winner} "
+                        f"(avg confidence {cov_avg:.1f}%). "
+                        "Clinical correlation and specialist review are recommended."
+                    ),
+                    "model_version": Path(settings.model_weights_path).name,
+                }
+                return {
+                    **cov_result,
+                    "positive_slices": cov_slices[:MAX_POSITIVE_SLICES],
+                    "preview_image_data": cov_rep["image_data"],
+                    "is_full_exam": True,
+                    "exam_series": [],
+                }
+
+        # ── Series positivity: ≥1 EfficientNet-confirmed slice ───────────────
+        if red_count < 1:
             final_result = {
                 "result": "negative",
                 "confidence": 0.0,
@@ -1012,28 +1552,30 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
                 "tumor_volume": None,
                 "bounding_box": None,
                 "report_text": (
-                    f"Cumulative-vote analysis found no tumour class above the "
-                    f"{SERIES_CONFIDENCE_THRESHOLD:.0f}% confidence threshold "
+                    f"Analysis found fewer than 2 non-isolated suspicious slices "
                     f"across the {slice_count}-image series."
                 ),
                 "model_version": Path(settings.model_weights_path).name,
             }
             positive_slices: list = interest_slices
-            print("  → Negative (no votes above threshold)\n")
+            print("  → Negative (isolated or insufficient suspicious slices)\n")
         else:
-            winner_name = max(cumulative_scores, key=lambda c: cumulative_scores[c][0])
-            score_sum, vote_count, max_conf = cumulative_scores[winner_name]
-            avg_conf = score_sum / vote_count
-            confidence_pct = round(avg_conf * 100, 1)
+            # Determine winner by highest cumulative confidence among non-isolated slices
+            class_scores: dict[str, float] = {}
+            for s in interest_slices:
+                ttype = s["tumor_type"]
+                class_scores[ttype] = class_scores.get(ttype, 0.0) + s["confidence"]
 
-            # Representative slice: highest-confidence interest slice for the winner
+            winner_name = max(class_scores, key=lambda c: class_scores[c])
             winner_slices = [s for s in interest_slices if s["tumor_type"] == winner_name]
-            rep_slice = (
-                max(winner_slices, key=lambda s: s["confidence"])
-                if winner_slices else None
-            )
-            tumor_location = rep_slice["tumor_location"] if rep_slice else "unspecified region"
-            bounding_box = rep_slice.get("bounding_box") if rep_slice else None
+            avg_conf = sum(s["confidence"] for s in winner_slices) / len(winner_slices)
+            confidence_pct = round(avg_conf, 1)
+            max_conf_pct = max(s["confidence"] for s in winner_slices)
+
+            # Representative slice: highest-confidence for the winner
+            rep_slice = max(winner_slices, key=lambda s: s["confidence"])
+            tumor_location = rep_slice["tumor_location"]
+            bounding_box = rep_slice.get("bounding_box")
 
             # Volume estimation (detection model only)
             tumor_volume = "N/A (classification model — no spatial data)"
@@ -1056,20 +1598,10 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
                     f"{bounding_box['width'] * bounding_box['height'] * 100:.1f}% image area"
                 )
 
-            if rep_slice:
-                preview_image_data = rep_slice["image_data"]
+            preview_image_data = rep_slice["image_data"]
 
-            # Build per-slice details for the report (slices that voted at ≥ 55%)
-            vote_slices = sorted(
-                [
-                    s for s in interest_slices
-                    if s["tumor_type"] == winner_name
-                    and s["confidence"] >= SERIES_CONFIDENCE_THRESHOLD
-                ],
-                key=lambda s: -s["confidence"],
-            )
             slice_detail_lines = []
-            for vs in vote_slices:
+            for vs in sorted(winner_slices, key=lambda s: -s["confidence"]):
                 bb = vs.get("bounding_box")
                 pos = vs.get("slice_position", "?")
                 bbox_str = (
@@ -1079,7 +1611,7 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
                     else "classification (no bbox)"
                 )
                 slice_detail_lines.append(
-                    f"  • Coupe {pos} — confédence : {vs['confidence']:.1f}% "
+                    f"  • Coupe {pos} — confiance : {vs['confidence']:.1f}% "
                     f"— {vs['tumor_location']} — bbox : [{bbox_str}]"
                 )
 
@@ -1092,12 +1624,11 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
                 "tumor_volume": tumor_volume,
                 "bounding_box": bounding_box,
                 "report_text": (
-                    f"Cumulative-vote analysis identified a {winner_name} "
-                    f"({vote_count} slice(s) with confidence "
-                    f"\u2265{SERIES_CONFIDENCE_THRESHOLD:.0f}%, "
-                    f"avg {confidence_pct:.1f}%, peak {max_conf * 100:.1f}%). "
+                    f"Analysis identified a {winner_name} "
+                    f"({red_count} non-isolated slice(s), "
+                    f"avg {confidence_pct:.1f}%, peak {max_conf_pct:.1f}%). "
                     "Clinical correlation and specialist review are recommended.\n\n"
-                    f"Positive slices detected (\u2265{SERIES_CONFIDENCE_THRESHOLD:.0f}%):\n"
+                    "Suspicious slices (non-isolated):\n"
                     + "\n".join(slice_detail_lines)
                 ),
                 "model_version": Path(settings.model_weights_path).name,
@@ -1105,7 +1636,7 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
             positive_slices = interest_slices
             print(
                 f"  \u2192 Winner: {winner_name} "
-                f"(votes={vote_count}, cumul={score_sum:.2f})\n"
+                f"(non-isolated={red_count}, avg={confidence_pct:.1f}%)\n"
             )
 
         subset_note = (
@@ -1113,12 +1644,71 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
             f"from the {slice_count}-image series.)"
         ) if len(sorted_files) < slice_count else ""
 
+        # ── Build PACS all_slices (all frames for the viewer) ─────────────────
+        pacs_suspicious_lookup: dict[tuple[int, int], dict] = {}
+        for ps in positive_slices:
+            pos_str = ps.get("slice_position", "")
+            try:
+                main_part = pos_str.split("/")[0]
+                if "." in main_part:
+                    orig_1based, frame_1based = main_part.split(".")
+                    orig_idx = int(orig_1based) - 1
+                    frame_sub = int(frame_1based) - 1
+                else:
+                    orig_idx = int(main_part) - 1
+                    frame_sub = 0
+                pacs_suspicious_lookup[(orig_idx, frame_sub)] = {
+                    "confidence": ps.get("confidence"),
+                    "bounding_box": ps.get("bounding_box"),
+                    "tumor_type": ps.get("tumor_type"),
+                }
+            except (ValueError, IndexError):
+                continue
+
+        if slice_count > MAX_PACS_SLICES_PER_SERIES:
+            pacs_step = max(1, slice_count // MAX_PACS_SLICES_PER_SERIES)
+            pacs_sorted = all_sorted_for_pacs[::pacs_step][:MAX_PACS_SLICES_PER_SERIES]
+        else:
+            pacs_step = 1
+            pacs_sorted = all_sorted_for_pacs
+
+        pacs_slices: list[dict] = []
+        pacs_global_num = 0
+        for pacs_enum_idx, (pfb, pfn, _) in enumerate(pacs_sorted):
+            pacs_orig_idx = pacs_enum_idx * pacs_step
+            frames_b64 = _decode_frames_to_b64_list(pfb, pfn)
+            for frame_sub_idx, frame_b64 in enumerate(frames_b64):
+                pacs_global_num += 1
+                det = pacs_suspicious_lookup.get((pacs_orig_idx, frame_sub_idx))
+                is_pos = bool(final_result.get("tumor_detected"))
+                pacs_slices.append({
+                    "slice_number": pacs_global_num,
+                    "image_data": frame_b64,
+                    "is_suspicious": det is not None and is_pos,
+                    "confidence": det["confidence"] if det and is_pos else None,
+                    "bounding_box": det["bounding_box"] if det and is_pos else None,
+                    "tumor_type": det["tumor_type"] if det and is_pos else None,
+                })
+
+        exam_series_pacs = [{
+            "series_uid": "__series__",
+            "series_label": f"Série IRM ({slice_count} images)",
+            "series_number": 1,
+            "total_slices": pacs_global_num,
+            "is_positive": bool(final_result.get("tumor_detected")),
+            "tumor_type": final_result.get("tumor_type"),
+            "confidence": final_result.get("confidence", 0.0),
+            "all_slices": pacs_slices,
+        }]
+
         old_report = final_result.get("report_text") or ""
         return {
             **final_result,
             "report_text": f"{old_report}{subset_note}",
             "positive_slices": positive_slices,
             "preview_image_data": preview_image_data,
+            "is_full_exam": True,
+            "exam_series": exam_series_pacs,
         }
 
     raise UnsupportedModelProviderError(
@@ -1133,6 +1723,52 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
 # Minimum per-series confidence (%) for a positive result to enter the
 # inter-series aggregation vote.  A series below this threshold is ignored.
 EXAM_SERIES_MIN_CONFIDENCE: float = 40.0
+
+# JPEG quality used when encoding all analyzed slices for PACS storage.
+# Lower values keep MongoDB document sizes manageable while preserving
+# enough detail for diagnostic review in the PACS viewer.
+PACS_JPEG_QUALITY: int = 50
+
+
+def _encode_frame_to_jpeg_b64(frame_array: "np.ndarray") -> str:
+    """Encode a uint8 numpy frame to a JPEG base64 data URI."""
+    if frame_array.ndim == 2:
+        img = Image.fromarray(frame_array, mode="L").convert("RGB")
+    else:
+        img = Image.fromarray(frame_array[:, :, :3], mode="RGB")
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=PACS_JPEG_QUALITY)
+    encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def _decode_frames_to_b64_list(file_bytes: bytes, file_name: str) -> list[str]:
+    """Decode a DICOM/PNG/JPEG file into a list of JPEG base64 data URIs.
+
+    Returns an empty list if the file cannot be decoded.
+    """
+    suffix = Path(Path(file_name).name).suffix.lower()
+    name = Path(file_name).name
+    uid_parts = [p for p in name.split(".") if p]
+    is_uid_dicom = len(uid_parts) >= 3 and all(p.isdigit() for p in uid_parts)
+
+    if suffix in {".dcm", ".dicom"} or suffix == "" or is_uid_dicom:
+        try:
+            dataset = dcmread(BytesIO(file_bytes), force=True)
+            frames = extract_all_dicom_frames(dataset)
+        except Exception:
+            return []
+        return [_encode_frame_to_jpeg_b64(f) for f in frames]
+
+    if suffix in {".jpeg", ".jpg", ".png"}:
+        try:
+            img = Image.open(BytesIO(file_bytes)).convert("RGB")
+            arr = np.array(img)
+            return [_encode_frame_to_jpeg_b64(arr)]
+        except Exception:
+            return []
+
+    return []
 
 
 def group_files_by_series(
@@ -1204,10 +1840,11 @@ def run_inference_full_exam(*, files: list[tuple[bytes, str, str]]) -> dict:
 
     all_series_results: list[dict] = []
     all_positive_slices: list[dict] = []
+    exam_series: list[dict] = []
     preview_image_data: str | None = None
 
     for series_idx, (series_uid, series_files) in enumerate(series_groups.items()):
-        label = (series_uid[:24] + "...") if len(series_uid) > 24 else series_uid
+        label = f"Série {series_idx + 1}"
         print(
             f"  [{series_idx + 1}/{n_series}] {label} "
             f"— {len(series_files)} file(s)"
@@ -1238,6 +1875,82 @@ def run_inference_full_exam(*, files: list[tuple[bytes, str, str]]) -> dict:
         confidence = result.get("confidence", 0.0)
         print(f"    -> {tumor_type} ({confidence:.1f}%)")
 
+        # ── Build PACS all_slices for this series ─────────────────────────────
+        # Sort files the same way run_inference_series does
+        valid_series_files = [f for f in series_files if is_supported_series_file(f[1])]
+
+        def _sort_key_series(item: tuple) -> tuple:
+            fn = item[1]
+            sfx = Path(fn).suffix.lower()
+            if sfx in {".dcm", ".dicom", ".ima"} or sfx == "":
+                return (0, get_dicom_instance_number(item[0]))
+            return (1, 0)
+
+        all_sorted = sorted(valid_series_files, key=_sort_key_series)
+
+        # Build lookup: (orig_file_idx, frame_sub_idx) → detection info
+        suspicious_lookup: dict[tuple[int, int], dict] = {}
+        for ps in result.get("positive_slices") or []:
+            pos_str = ps.get("slice_position", "")
+            try:
+                main_part = pos_str.split("/")[0]
+                if "." in main_part:
+                    orig_1based, frame_1based = main_part.split(".")
+                    orig_idx = int(orig_1based) - 1
+                    frame_sub = int(frame_1based) - 1
+                else:
+                    orig_idx = int(main_part) - 1
+                    frame_sub = 0
+                suspicious_lookup[(orig_idx, frame_sub)] = {
+                    "confidence": ps.get("confidence"),
+                    "bounding_box": ps.get("bounding_box"),
+                    "tumor_type": ps.get("tumor_type"),
+                }
+            except (ValueError, IndexError):
+                continue
+
+        # Show up to MAX_PACS_SLICES_PER_SERIES slices in the viewer — decoupled from
+        # the YOLO inference limit so the doctor sees the full volume.
+        slice_count_full = len(all_sorted)
+        if slice_count_full > MAX_PACS_SLICES_PER_SERIES:
+            pacs_step = max(1, slice_count_full // MAX_PACS_SLICES_PER_SERIES)
+            pacs_sorted = all_sorted[::pacs_step][:MAX_PACS_SLICES_PER_SERIES]
+        else:
+            pacs_step = 1
+            pacs_sorted = all_sorted
+
+        # Decode every SAMPLED file and build all_slices list.
+        # orig_idx = enum_idx * pacs_step → position in the original all_sorted,
+        # which is what suspicious_lookup was built from.
+        pacs_slices: list[dict] = []
+        global_slice_num = 0
+        for enum_idx, (fb, fn, _) in enumerate(pacs_sorted):
+            orig_idx = enum_idx * pacs_step
+            frames_b64 = _decode_frames_to_b64_list(fb, fn)
+            for frame_sub_idx, frame_b64 in enumerate(frames_b64):
+                global_slice_num += 1
+                det = suspicious_lookup.get((orig_idx, frame_sub_idx))
+                series_positive = bool(result.get("tumor_detected"))
+                pacs_slices.append({
+                    "slice_number": global_slice_num,
+                    "image_data": frame_b64,
+                    "is_suspicious": det is not None and series_positive,
+                    "confidence": det["confidence"] if det and series_positive else None,
+                    "bounding_box": det["bounding_box"] if det and series_positive else None,
+                    "tumor_type": det["tumor_type"] if det and series_positive else None,
+                })
+
+        exam_series.append({
+            "series_uid": series_uid,
+            "series_label": label,
+            "series_number": series_idx + 1,
+            "total_slices": global_slice_num,
+            "is_positive": bool(result.get("tumor_detected")),
+            "tumor_type": result.get("tumor_type"),
+            "confidence": result.get("confidence", 0.0),
+            "all_slices": pacs_slices,
+        })
+
     if not all_series_results:
         return {
             "result": "negative",
@@ -1251,6 +1964,8 @@ def run_inference_full_exam(*, files: list[tuple[bytes, str, str]]) -> dict:
             "model_version": Path(settings.model_weights_path).name,
             "positive_slices": [],
             "preview_image_data": None,
+            "is_full_exam": True,
+            "exam_series": [],
         }
 
     # ── Step 4: filter qualifying positive series ─────────────────────────────
@@ -1297,6 +2012,8 @@ def run_inference_full_exam(*, files: list[tuple[bytes, str, str]]) -> dict:
             "model_version": Path(settings.model_weights_path).name,
             "positive_slices": [],
             "preview_image_data": preview_image_data,
+            "is_full_exam": True,
+            "exam_series": exam_series,
         }
 
     # ── Step 5: weighted vote across qualifying series ────────────────────────
@@ -1356,4 +2073,6 @@ def run_inference_full_exam(*, files: list[tuple[bytes, str, str]]) -> dict:
         "model_version": Path(settings.model_weights_path).name,
         "positive_slices": winner_positive_slices,
         "preview_image_data": preview_image_data,
+        "is_full_exam": True,
+        "exam_series": exam_series,
     }

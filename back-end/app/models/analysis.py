@@ -16,6 +16,8 @@ def build_analysis_document(
     report_text: str | None = None,
     model_version: str | None = None,
     positive_slices: list[dict] | None = None,
+    is_full_exam: bool = False,
+    exam_series: list[dict] | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(UTC)
     return {
@@ -31,6 +33,8 @@ def build_analysis_document(
         "report_text": report_text,
         "model_version": model_version,
         "positive_slices": positive_slices or [],
+        "is_full_exam": is_full_exam,
+        "exam_series": exam_series or [],
         "created_at": now,
         "updated_at": now,
     }

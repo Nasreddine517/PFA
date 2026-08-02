@@ -343,26 +343,7 @@ const SlicesPage = () => {
                   divideColor: "rgba(239,68,68,0.1)",
                 }}
               >
-                {/* Tumor type */}
-                <div className="flex items-start gap-3 px-5 py-4">
-                  <div
-                    className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
-                    style={{
-                      background: "rgba(239,68,68,0.12)",
-                      border: "1px solid rgba(239,68,68,0.25)",
-                    }}
-                  >
-                    <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs text-muted-foreground mb-0.5">
-                      {lang === "fr" ? "Type de tumeur" : "Tumor type"}
-                    </p>
-                    <p className="text-sm font-semibold text-foreground capitalize truncate">
-                      {slice.tumorType || "—"}
-                    </p>
-                  </div>
-                </div>
+
 
                 {/* Location */}
                 <div className="flex items-start gap-3 px-5 py-4">
