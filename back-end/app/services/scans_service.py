@@ -15,7 +15,7 @@ ALLOWED_CONTENT_TYPES = {
     "image/jpg",
     "image/png",
 }
-ALLOWED_EXTENSIONS = {".dcm", ".dicom", ".jpeg", ".jpg", ".png"}
+ALLOWED_EXTENSIONS = {".dcm", ".dicom", ".ima", ".jpeg", ".jpg", ".png"}
 
 
 class InvalidScanFileError(Exception):
@@ -31,7 +31,8 @@ class SeriesTooManyFilesError(Exception):
 
 
 MAX_SERIES_FILES = 800
-ALLOWED_SERIES_EXTENSIONS = {".dcm", ".dicom", ".png", ".jpg", ".jpeg"}
+ALLOWED_SERIES_EXTENSIONS = {".dcm", ".dicom", ".ima", ".png", ".jpg", ".jpeg"}
+DICOM_CONTENT_TYPES = {"application/dicom", "application/dicom+json"}
 
 
 def has_supported_file_extension(file_name: str) -> bool:
@@ -131,10 +132,10 @@ async def create_scan_series(
             f"Series exceeds the maximum of {MAX_SERIES_FILES} slices."
         )
 
-    for file_bytes, file_name, _file_type in files:
-        if not has_supported_file_extension(file_name):
+    for file_bytes, file_name, file_type in files:
+        if not has_supported_file_extension(file_name) and file_type not in DICOM_CONTENT_TYPES:
             raise InvalidScanFileError(
-                "Series files must be DICOM (.dcm), PNG, or JPEG images."
+                "Series files must be DICOM (.dcm / .ima), PNG, or JPEG images."
             )
         if len(file_bytes) == 0:
             raise InvalidScanFileError(f"Uploaded file is empty: {file_name}")

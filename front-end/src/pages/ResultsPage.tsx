@@ -1,16 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   AlertTriangle, CheckCircle, Download, Printer, ArrowLeft, Brain,
-  Target, Activity, FileText, TrendingUp, Shield, Sparkles, Star,
+  Target, Activity, TrendingUp, Shield, Sparkles, Star,
   MapPin, Layers, Calendar, Hash, Cpu, ChevronRight, Eye,
 } from "lucide-react";
 import AnimatedButton from "@/components/AnimatedButton";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
-import { getAnalysisById, PositiveSlice } from "@/lib/analysisApi";
+import { getAnalysisById, PositiveSlice, ExamSeries } from "@/lib/analysisApi";
 import { generateMedicalReport } from "@/lib/generatePDF";
 
 const LATEST_ANALYSIS_STORAGE_KEY = "neuroscan_latest_analysis_id";
@@ -18,6 +18,8 @@ const LATEST_ANALYSIS_STORAGE_KEY = "neuroscan_latest_analysis_id";
 interface ResultLocationState {
   patientName?: string;
   patientId?: string;
+  patientSex?: string;
+  patientAge?: string;
   scanDate?: string;
 }
 
@@ -43,6 +45,8 @@ interface ScanResult {
   report_text: string | null;
   image_url: string | null;
   positive_slices: PositiveSlice[];
+  is_full_exam: boolean;
+  exam_series: ExamSeries[] | null;
 }
 
 const ResultsPage = () => {
@@ -55,6 +59,14 @@ const ResultsPage = () => {
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [imageLoaded, setImageLoaded] = useState(false);
+
+  // ── PACS viewer state ──────────────────────────────────────────────────────
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const pacsViewerRef = useRef<HTMLDivElement>(null);
+  const [pacsSelectedSeries, setPacsSelectedSeries] = useState(0);
+  const [pacsViewAll, setPacsViewAll] = useState(false);
+  const [pacsSliceByIdx, setPacsSliceByIdx] = useState<Record<number, number>>({});
+  const [pacsBboxVisible, setPacsBboxVisible] = useState(true);
 
 
   useEffect(() => {
@@ -91,6 +103,8 @@ const ResultsPage = () => {
           report_text: analysis.reportText,
           image_url: analysis.imageUrl || analysis.previewImageData || localStorage.getItem(`neuroscan_preview_${analysis.id}`) || sessionStorage.getItem(`neuroscan_scan_image_${analysis.id}`) || null,
           positive_slices: analysis.positiveSlices || [],
+          is_full_exam: analysis.isFullExam ?? false,
+          exam_series: analysis.examSeries ?? null,
         });
       } catch (error) {
         console.error("Failed to load scan:", error);
@@ -103,12 +117,12 @@ const ResultsPage = () => {
     void loadAnalysis();
   }, [id, routeState.patientId, routeState.patientName, routeState.scanDate, session?.accessToken, user]);
 
-const handleDownloadPDF = () => {
+  const handleDownloadPDF = () => {
     if (!scan) return;
     generateMedicalReport({
       patientName:     scan.patient_name,
       patientId:       scan.patient_id_number || "N/A",
-      scanDate:        scan.scan_date,          // ← raw string, formatDate() s'en occupe
+      scanDate:        scan.scan_date,
       scanType:        scan.scan_type || "T1-weighted MRI",
       result:          scan.result,
       confidence:      scan.confidence || 0,
@@ -125,6 +139,81 @@ const handleDownloadPDF = () => {
       doctorHospital:  user?.hospital     || undefined,
     });
   };
+
+  // ── PACS canvas rendering ─────────────────────────────────────────────────
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || pacsViewAll || !scan?.exam_series) return;
+    const series = scan.exam_series[pacsSelectedSeries];
+    if (!series) return;
+    const sliceIdx = pacsSliceByIdx[pacsSelectedSeries] ?? 0;
+    const slice = series.allSlices[sliceIdx];
+    if (!slice?.imageData) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const img = new window.Image();
+    img.onload = () => {
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      ctx.drawImage(img, 0, 0);
+      if (pacsBboxVisible && slice.isSuspicious && slice.boundingBox) {
+        const { x, y, width, height } = slice.boundingBox;
+        const lw = Math.max(2, img.naturalWidth * 0.005);
+        ctx.lineWidth = lw;
+        ctx.strokeStyle = "#ef4444";
+        ctx.shadowColor = "rgba(239,68,68,0.7)";
+        ctx.shadowBlur = 10;
+        ctx.strokeRect(x * img.naturalWidth, y * img.naturalHeight, width * img.naturalWidth, height * img.naturalHeight);
+        ctx.shadowBlur = 0;
+        const label = lang === "fr" ? "Tumeur" : "Tumor";
+        const fs = Math.max(12, Math.floor(img.naturalWidth * 0.026));
+        ctx.font = `bold ${fs}px "Courier New", monospace`;
+        const tw = ctx.measureText(label).width + 10;
+        const lh = fs + 8;
+        const lx = x * img.naturalWidth;
+        const ly = Math.max(0, y * img.naturalHeight - lh - 2);
+        ctx.fillStyle = "rgba(239,68,68,0.9)";
+        ctx.fillRect(lx, ly, tw, lh);
+        ctx.fillStyle = "white";
+        ctx.fillText(label, lx + 5, ly + fs + 1);
+      }
+    };
+    img.src = slice.imageData;
+  }, [scan?.exam_series, pacsSelectedSeries, pacsSliceByIdx, pacsBboxVisible, pacsViewAll]);
+
+  // ── PACS mouse-wheel scrolling ────────────────────────────────────────────
+  useEffect(() => {
+    const el = pacsViewerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 1 : -1;
+      const seriesLen = scan?.exam_series?.[pacsSelectedSeries]?.allSlices.length ?? 0;
+      setPacsSliceByIdx(prev => {
+        const cur = prev[pacsSelectedSeries] ?? 0;
+        return { ...prev, [pacsSelectedSeries]: Math.max(0, Math.min(cur + delta, seriesLen - 1)) };
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [scan?.exam_series, pacsSelectedSeries]);
+
+  // ── PACS navigation helpers ───────────────────────────────────────────────
+  const pacsCurrentSeries = scan?.exam_series?.[pacsSelectedSeries];
+  const pacsSliceIdx = pacsSliceByIdx[pacsSelectedSeries] ?? 0;
+
+  const goToSlice = useCallback((idx: number) => {
+    const len = pacsCurrentSeries?.allSlices.length ?? 0;
+    setPacsSliceByIdx(prev => ({ ...prev, [pacsSelectedSeries]: Math.max(0, Math.min(idx, len - 1)) }));
+  }, [pacsCurrentSeries, pacsSelectedSeries]);
+
+  const goToNextSuspicious = useCallback(() => {
+    const slices = pacsCurrentSeries?.allSlices ?? [];
+    const suspIdx = slices.map((s, i) => ({ i, s })).filter(({ s }) => s.isSuspicious).map(({ i }) => i);
+    if (!suspIdx.length) return;
+    const next = suspIdx.find(i => i > pacsSliceIdx);
+    goToSlice(next !== undefined ? next : suspIdx[0]);
+  }, [pacsCurrentSeries, pacsSliceIdx, goToSlice]);
 
   if (loading) {
     return (
@@ -166,9 +255,271 @@ const handleDownloadPDF = () => {
   const patientFields = [
     { label: t("res.name"), value: scan.patient_name, icon: Shield },
     { label: t("res.id"), value: scan.patient_id_number || "N/A", icon: Hash },
+    ...(routeState.patientSex ? [{ label: lang === 'fr' ? 'Sexe' : 'Sex', value: routeState.patientSex, icon: Shield }] : []),
+    ...(routeState.patientAge ? [{ label: lang === 'fr' ? 'Âge' : 'Age', value: routeState.patientAge, icon: Shield }] : []),
     { label: t("res.scanDate"), value: new Date(scan.scan_date).toLocaleDateString(), icon: Calendar },
     { label: t("res.scanType"), value: scan.scan_type || "T1-weighted MRI", icon: Cpu },
   ];
+
+  // ── PACS VIEW (full exam) ─────────────────────────────────────────────────
+  if (scan.is_full_exam && scan.exam_series && scan.exam_series.length > 0) {
+    const series = scan.exam_series[pacsSelectedSeries];
+    const currentSlice = series?.allSlices[pacsSliceIdx];
+    const suspiciousIndices = (series?.allSlices ?? []).map((s, i) => s.isSuspicious ? i : -1).filter(i => i >= 0);
+    const hasSuspicious = suspiciousIndices.length > 0;
+
+    const pacsHeader = (
+      <div className="flex items-center justify-between px-4 py-2 border-b border-white/10 flex-shrink-0" style={{ background: "#0f0f18", minHeight: "52px" }}>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button onClick={() => navigate("/upload")} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-white transition-colors">
+            <ArrowLeft className="w-4 h-4" />{lang === "fr" ? "Retour" : "Back"}
+          </button>
+          <div className="h-4 w-px bg-white/20" />
+          <div className="flex items-center gap-1.5">
+            <Brain className="w-4 h-4 text-primary" />
+            <span className="font-bold text-white text-sm tracking-wide">NeuroScan PACS</span>
+          </div>
+          <div className="h-4 w-px bg-white/20" />
+          <div className="flex items-center gap-2 text-xs text-white/60 flex-wrap">
+            <span className="text-white/90 font-medium">{scan.patient_name}</span>
+            {routeState.patientAge && <span>· {lang === "fr" ? "Âge" : "Age"}: {routeState.patientAge}</span>}
+            {routeState.patientSex && <span>· {routeState.patientSex}</span>}
+            <span>· {new Date(scan.scan_date).toLocaleDateString()}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`px-2 py-0.5 rounded text-xs font-bold border ${
+            isPositive ? "bg-red-500/20 text-red-400 border-red-500/30" : "bg-blue-500/20 text-blue-400 border-blue-500/30"
+          }`}>
+            {isPositive ? (lang === "fr" ? "POSITIF" : "POSITIVE") : (lang === "fr" ? "NÉGATIF" : "NEGATIVE")}
+          </span>
+          <Button size="sm" onClick={handleDownloadPDF}
+            className="gap-1.5 h-8 text-xs"
+            style={{ background: "linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)))", color: "white", border: "none" }}>
+            <Download className="w-3.5 h-3.5" /> PDF
+          </Button>
+        </div>
+      </div>
+    );
+
+    // ── "Voir tous" grid mode ───────────────────────────────────
+    if (pacsViewAll) {
+      return (
+        <div className="h-screen flex flex-col overflow-hidden" style={{ background: "#0a0a0f" }}>
+          {pacsHeader}
+          {/* Series strip */}
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-white/10 flex-shrink-0" style={{ background: "#0c0c16" }}>
+            <button onClick={() => setPacsViewAll(false)} className="text-xs text-white/60 hover:text-white flex items-center gap-1 border border-white/15 rounded px-2 py-1 transition-colors">
+              <ArrowLeft className="w-3 h-3" /> {lang === "fr" ? "Retour visionneur" : "Back to viewer"}
+            </button>
+            {scan.exam_series.map((s, idx) => (
+              <button
+                key={s.seriesUid}
+                onClick={() => { setPacsSelectedSeries(idx); setPacsViewAll(false); }}
+                className={`text-xs px-2 py-1 rounded border transition-colors ${idx === pacsSelectedSeries ? "bg-white/15 text-white border-white/30" : "text-white/50 border-white/10 hover:bg-white/8 hover:text-white/80"}`}
+              >
+                {s.isPositive && <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 mr-1 mb-px" />}
+                {lang === "fr" ? `Série ${s.seriesNumber}` : `Series ${s.seriesNumber}`}
+              </button>
+            ))}
+          </div>
+          {/* Thumbnails grid */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {scan.exam_series.map((s, sIdx) => (
+              <div key={s.seriesUid} className="mb-8">
+                <div className="flex items-center gap-2 mb-3">
+                  {s.isPositive && <div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.7)]" />}
+                  <span className="text-sm font-semibold text-white">{lang === "fr" ? `Série ${s.seriesNumber}` : `Series ${s.seriesNumber}`}</span>
+                  <span className="text-xs text-white/40">{s.seriesLabel}</span>
+                  <span className="text-xs text-white/30">— {s.totalSlices} {lang === "fr" ? "coupes" : "slices"}</span>
+                  {s.isPositive && <span className="text-xs text-red-400 font-bold">{lang === "fr" ? `⚠ ${suspiciousIndices.length} suspicieuse(s)` : `⚠ suspicious`}</span>}
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {s.allSlices.map((slice, sliceIdx) => (
+                    <button
+                      key={sliceIdx}
+                      onClick={() => { setPacsSelectedSeries(sIdx); setPacsViewAll(false); setPacsSliceByIdx(prev => ({ ...prev, [sIdx]: sliceIdx })); }}
+                      className={`relative w-14 h-14 overflow-hidden rounded border transition-all hover:scale-105 hover:border-white/50 ${
+                        slice.isSuspicious ? "border-red-500/70 shadow-[0_0_8px_rgba(239,68,68,0.4)]" : "border-white/10"
+                      }`}
+                      title={`Slice ${sliceIdx + 1}${slice.isSuspicious ? " ⚠" : ""}`}
+                    >
+                      <img src={slice.imageData} alt="" className="w-full h-full object-cover" />
+                      {slice.isSuspicious && (
+                        <div className="absolute inset-0 border-2 border-red-500/50 rounded pointer-events-none" />
+                      )}
+                      <div className={`absolute bottom-0 left-0 right-0 text-center text-[8px] leading-4 ${
+                        slice.isSuspicious ? "bg-red-900/80 text-red-300" : "bg-black/60 text-white/50"
+                      }`}>{sliceIdx + 1}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ── Main PACS single-series viewer ──────────────────────────
+    return (
+      <div className="h-screen flex flex-col overflow-hidden" style={{ background: "#0a0a0f" }}>
+        {pacsHeader}
+        <div className="flex flex-1 overflow-hidden">
+
+          {/* Left sidebar — series list */}
+          <div className="w-52 flex-shrink-0 border-r border-white/10 flex flex-col overflow-hidden" style={{ background: "#0c0c16" }}>
+            <div className="px-3 py-2 border-b border-white/10">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                {lang === "fr" ? "SÉRIES" : "SERIES"} ({scan.exam_series.length})
+              </span>
+            </div>
+            <div className="flex-1 overflow-y-auto py-1">
+              {scan.exam_series.map((s, idx) => (
+                <button
+                  key={s.seriesUid}
+                  onClick={() => { setPacsSelectedSeries(idx); setPacsViewAll(false); }}
+                  className={`w-full text-left px-3 py-2.5 flex items-start gap-2 text-xs transition-all ${
+                    idx === pacsSelectedSeries ? "bg-white/10 text-white" : "text-white/50 hover:bg-white/5 hover:text-white/80"
+                  }`}
+                >
+                  <div className="flex-shrink-0 mt-1">
+                    {s.isPositive
+                      ? <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.7)]" />
+                      : <div className="w-2.5 h-2.5 rounded-full bg-white/20" />
+                    }
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{lang === "fr" ? `Série ${s.seriesNumber}` : `Series ${s.seriesNumber}`}</div>
+                    <div className="text-white/30 text-[10px] mt-0.5">{s.totalSlices} {lang === "fr" ? "coupes" : "slices"}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="border-t border-white/10 p-1">
+              <button
+                onClick={() => setPacsViewAll(true)}
+                className="w-full text-left px-3 py-2 flex items-center gap-2 text-xs rounded text-white/50 hover:bg-white/5 hover:text-white/80 transition-all"
+              >
+                <Eye className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="font-medium">{lang === "fr" ? "Voir tous" : "View all"}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Main image viewer */}
+          <div className="flex-1 flex flex-col overflow-hidden bg-black">
+            {/* Viewer toolbar */}
+            <div className="flex items-center justify-between px-4 py-2 border-b border-white/10 flex-shrink-0" style={{ background: "#0f0f1a" }}>
+              <div className="flex items-center gap-3 text-xs text-white/60 flex-wrap">
+                <span className="font-semibold text-white">
+                  {series ? (lang === "fr" ? `Série ${series.seriesNumber}` : `Series ${series.seriesNumber}`) : ""}
+                </span>
+                <span className="text-white/25">·</span>
+                <span>
+                  {lang === "fr" ? "Coupe" : "Slice"}{" "}
+                  <strong className="text-white">{pacsSliceIdx + 1}</strong> / {series?.totalSlices ?? 0}
+                </span>
+                {currentSlice?.isSuspicious && (
+                  <span className="px-2 py-0.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded text-[10px] font-bold">
+                    ⚠ {lang === "fr" ? "Suspicieux" : "Suspicious"}
+                    {currentSlice.confidence != null && ` — ${currentSlice.confidence.toFixed(1)}%`}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => setPacsBboxVisible(v => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs border transition-all ${
+                  pacsBboxVisible ? "bg-red-500/15 text-red-400 border-red-500/30" : "bg-white/5 text-white/30 border-white/10"
+                }`}
+              >
+                <Target className="w-3.5 h-3.5" />
+                {pacsBboxVisible ? (lang === "fr" ? "Masquer bbox" : "Hide bbox") : (lang === "fr" ? "Afficher bbox" : "Show bbox")}
+              </button>
+            </div>
+
+            {/* Image + right nav panel */}
+            <div className="flex flex-1 overflow-hidden">
+
+              {/* Image canvas — takes all available space */}
+              <div ref={pacsViewerRef} className="flex-1 flex items-center justify-center overflow-hidden p-4" style={{ background: "#050508", cursor: "ns-resize" }}>
+                {currentSlice?.imageData ? (
+                  <canvas
+                    ref={canvasRef}
+                    style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", imageRendering: "pixelated", display: "block" }}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-3 text-white/20">
+                    <Brain className="w-20 h-20" />
+                    <span className="text-sm">{lang === "fr" ? "Aucune image" : "No image"}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Right navigation panel */}
+              <div className="w-14 flex-shrink-0 flex flex-col items-center border-l border-white/10 overflow-hidden" style={{ background: "#0d0d1a" }}>
+
+                {/* Prev button */}
+                <button
+                  onClick={() => goToSlice(pacsSliceIdx - 1)}
+                  disabled={pacsSliceIdx === 0}
+                  title={lang === "fr" ? "Coupe précédente" : "Previous slice"}
+                  className="w-full flex-shrink-0 flex items-center justify-center py-3 text-white/50 hover:bg-white/8 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all border-b border-white/10 text-sm"
+                >
+                  ▲
+                </button>
+
+                {/* Vertical slice strip — scrollable */}
+                <div
+                  className="flex-1 overflow-y-auto overflow-x-hidden flex flex-col items-center gap-1 py-2 px-1"
+                  style={{ scrollbarWidth: "none" }}
+                >
+                  {series?.allSlices.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => goToSlice(i)}
+                      title={`${lang === "fr" ? "Coupe" : "Slice"} ${i + 1}${s.isSuspicious ? " ⚠" : ""}`}
+                      className={`flex-shrink-0 w-9 h-7 rounded text-[9px] font-medium transition-all ${
+                        i === pacsSliceIdx
+                          ? "bg-white text-black shadow-[0_0_8px_rgba(255,255,255,0.4)]"
+                          : s.isSuspicious
+                            ? "bg-red-500/40 text-red-300 border border-red-500/50 hover:bg-red-500/60"
+                            : "bg-white/10 text-white/35 hover:bg-white/20 hover:text-white/70"
+                      }`}
+                    >
+                      {i + 1}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Next button */}
+                <button
+                  onClick={() => goToSlice(pacsSliceIdx + 1)}
+                  disabled={!series || pacsSliceIdx >= series.allSlices.length - 1}
+                  title={lang === "fr" ? "Coupe suivante" : "Next slice"}
+                  className="w-full flex-shrink-0 flex items-center justify-center py-3 text-white/50 hover:bg-white/8 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all border-t border-white/10 text-sm"
+                >
+                  ▼
+                </button>
+
+                {/* "Next suspicious" button — vertical text */}
+                {hasSuspicious && (
+                  <button
+                    onClick={goToNextSuspicious}
+                    title={lang === "fr" ? "Prochaine coupe suspecte" : "Next suspicious slice"}
+                    className="w-full flex-shrink-0 flex items-center justify-center py-3 border-t border-red-500/25 bg-red-500/8 hover:bg-red-500/18 transition-all"
+                  >
+                    <AlertTriangle className="w-4 h-4 text-red-400" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  // ──────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-background">
@@ -196,7 +547,7 @@ const handleDownloadPDF = () => {
           className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8"
         >
           <div className="flex items-center gap-3">
-            <Link to="/dashboard">
+            <Link to="/upload">
               <motion.div whileHover={{ x: -3 }} whileTap={{ scale: 0.95 }}>
                 <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground hover:text-foreground">
                   <ArrowLeft className="w-4 h-4" /> {t("res.back")}
@@ -287,7 +638,7 @@ const handleDownloadPDF = () => {
               </div>
               <p className="text-sm text-muted-foreground leading-relaxed">
                 {isPositive
-                  ? (lang === "fr" ? `${scan.tumor_type} identifiée avec ${confidence}% de confiance.` : `${scan.tumor_type} identified with ${confidence}% confidence.`)
+                  ? (lang === "fr" ? `Tumeur détectée avec ${confidence}% de confiance.` : `Tumor detected with ${confidence}% confidence.`)
                   : (lang === "fr" ? `Le scan cérébral paraît normal avec ${confidence}% de confiance.` : `Brain scan appears normal with ${confidence}% confidence.`)}
               </p>
             </div>

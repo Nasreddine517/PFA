@@ -29,6 +29,31 @@ export interface PositiveSlice {
   } | null;
 }
 
+export interface ExamSlice {
+  sliceNumber: number;
+  imageData: string;
+  isSuspicious: boolean;
+  confidence: number | null;
+  boundingBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null;
+  tumorType: string | null;
+}
+
+export interface ExamSeries {
+  seriesUid: string;
+  seriesLabel: string;
+  seriesNumber: number;
+  totalSlices: number;
+  isPositive: boolean;
+  tumorType: string | null;
+  confidence: number;
+  allSlices: ExamSlice[];
+}
+
 export interface AnalysisResult {
   id: string;
   scanId: string;
@@ -53,6 +78,8 @@ export interface AnalysisResult {
   modelVersion?: string | null;
   positiveSlices?: PositiveSlice[];
   previewImageData?: string | null;
+  isFullExam?: boolean;
+  examSeries?: ExamSeries[] | null;
   createdAt: string;
 }
 

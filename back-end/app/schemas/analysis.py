@@ -50,6 +50,30 @@ class PositiveSliceResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class ExamSliceResponse(BaseModel):
+    slice_number: int = Field(..., alias="sliceNumber")
+    image_data: str = Field(..., alias="imageData")
+    is_suspicious: bool = Field(..., alias="isSuspicious")
+    confidence: float | None = None
+    bounding_box: BoundingBoxResponse | None = Field(None, alias="boundingBox")
+    tumor_type: str | None = Field(None, alias="tumorType")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ExamSeriesResponse(BaseModel):
+    series_uid: str = Field(..., alias="seriesUid")
+    series_label: str = Field(..., alias="seriesLabel")
+    series_number: int = Field(..., alias="seriesNumber")
+    total_slices: int = Field(..., alias="totalSlices")
+    is_positive: bool = Field(..., alias="isPositive")
+    tumor_type: str | None = Field(None, alias="tumorType")
+    confidence: float
+    all_slices: list[ExamSliceResponse] = Field(default_factory=list, alias="allSlices")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class AnalysisResponse(BaseModel):
     id: str
     scan_id: str = Field(..., alias="scanId")
@@ -67,6 +91,8 @@ class AnalysisResponse(BaseModel):
     model_version: str | None = Field(None, alias="modelVersion")
     positive_slices: list[PositiveSliceResponse] = Field(default_factory=list, alias="positiveSlices")
     preview_image_data: str | None = Field(None, alias="previewImageData")
+    is_full_exam: bool = Field(False, alias="isFullExam")
+    exam_series: list[ExamSeriesResponse] | None = Field(None, alias="examSeries")
     created_at: datetime = Field(..., alias="createdAt")
 
     model_config = ConfigDict(populate_by_name=True)
