@@ -1314,12 +1314,13 @@ def run_inference_series(*, files: list[tuple[bytes, str, str]]) -> dict:
             "No supported image files found in the uploaded series (DICOM, PNG, JPEG)."
         )
 
-    def _sort_key(item: tuple[bytes, str, str]) -> tuple[int, int]:
+    def _sort_key(item: tuple[bytes, str, str]) -> tuple[int, int, str]:
         fn = item[1]
         sfx = Path(fn).suffix.lower()
+        name = Path(fn).name
         if sfx in {".dcm", ".dicom", ".ima"} or sfx == "":
-            return (0, get_dicom_instance_number(item[0]))
-        return (1, 0)
+            return (0, get_dicom_instance_number(item[0]), name)
+        return (1, 0, name)
 
     sorted_files = sorted(valid_files, key=_sort_key)
     slice_count = len(sorted_files)
@@ -1808,7 +1809,8 @@ def group_files_by_series(
 
         groups.setdefault(series_uid, []).append((file_bytes, file_name, file_type))
 
-    return groups
+    # Tri déterministe : UIDs connus par ordre alphabétique, __unknown__ en dernier.
+    return dict(sorted(groups.items(), key=lambda kv: (kv[0] == "__unknown__", kv[0])))
 
 
 def run_inference_full_exam(*, files: list[tuple[bytes, str, str]]) -> dict:
@@ -1882,9 +1884,10 @@ def run_inference_full_exam(*, files: list[tuple[bytes, str, str]]) -> dict:
         def _sort_key_series(item: tuple) -> tuple:
             fn = item[1]
             sfx = Path(fn).suffix.lower()
+            name = Path(fn).name
             if sfx in {".dcm", ".dicom", ".ima"} or sfx == "":
-                return (0, get_dicom_instance_number(item[0]))
-            return (1, 0)
+                return (0, get_dicom_instance_number(item[0]), name)
+            return (1, 0, name)
 
         all_sorted = sorted(valid_series_files, key=_sort_key_series)
 
